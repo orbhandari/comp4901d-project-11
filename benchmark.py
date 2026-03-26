@@ -118,9 +118,6 @@ def run_quant_benchmark(model_path, quant):
     mem_increase = peak_mem - baseline_mem
     prefill_tps = prompt_tokens / ttft_s if ttft_s > 0 else 0
 
-    gc.collect()
-    time.sleep(2)
-
     return {
         "Device": DEVICE_NAME,
         "Quant": quant,
@@ -133,20 +130,30 @@ def run_quant_benchmark(model_path, quant):
     }
 
 
+# ==========================================
 # Caching Ablation
 # ==========================================
 def run_caching_ablation(model_path, cache_type="ram"):
     print(f"\nStarting Prompt Caching Ablation Study ({cache_type.upper()} Cache)...")
 
+    # Initialize process tracker
+    process = psutil.Process()
+
     llm = Llama(model_path=model_path, n_ctx=CONTEXT_SIZE, verbose=False)
+
+    # Capture baseline AFTER model load but BEFORE cache generation
+    # This isolates the memory used specifically by the KV Cache
+    baseline_mem = process.memory_info().rss / (1024 * 1024)
 
     if cache_type == "disk":
         cache_dir = "llm_cache_test"
         if os.path.exists(cache_dir):
             shutil.rmtree(cache_dir)
+            time.sleep(0.5) # Slight delay to ensure OS clears directory
         os.makedirs(cache_dir)
         cache = LlamaDiskCache(cache_dir=cache_dir)
     elif cache_type == "ram":
+        # Note: 2GB capacity is assigned, but RAM is only consumed as it fills
         cache = LlamaRAMCache(capacity_bytes=2 * (1 << 30))
     else:
         raise ValueError("cache_type must be either 'ram' or 'disk'")
@@ -160,17 +167,24 @@ def run_caching_ablation(model_path, cache_type="ram"):
     start_1 = time.time()
     llm(prompt_1, max_tokens=10)
     ttft_cold = (time.time() - start_1) * 1000
+    
+    # Measure memory after first generation (Cache populated)
+    post_cold_mem = process.memory_info().rss / (1024 * 1024)
 
     print(f"  -> Testing Warm Cache ({cache_type.upper()})...")
     start_2 = time.time()
     llm(prompt_2, max_tokens=10)
     ttft_warm = (time.time() - start_2) * 1000
 
+    # Measure memory after second generation (Cache reused and extended)
+    post_warm_mem = process.memory_info().rss / (1024 * 1024)
+
+    # Calculate the total RAM overhead introduced during caching scenarios
+    cache_overhead = post_warm_mem - baseline_mem
+
+    # Cleanup
     if cache_type == "disk" and os.path.exists(cache_dir):
         shutil.rmtree(cache_dir)
-        
-    gc.collect()
-    time.sleep(2)
 
     return {
         "Scenario": f"Shared Prefix ({cache_type.upper()})",
@@ -178,8 +192,11 @@ def run_caching_ablation(model_path, cache_type="ram"):
         "TTFT_Warm_ms": round(ttft_warm, 2),
         "Improvement_ms": round(ttft_cold - ttft_warm, 2),
         "Reduction_Percent": round(((ttft_cold - ttft_warm) / ttft_cold) * 100, 2),
+        "Baseline_RAM_MB": round(baseline_mem, 2),
+        "Post_Cold_RAM_MB": round(post_cold_mem, 2),
+        "Post_Warm_RAM_MB": round(post_warm_mem, 2),
+        "Total_Cache_Overhead_MB": round(cache_overhead, 2),
     }
-
 
 # ==========================================
 # Main Orchestrator
@@ -191,9 +208,16 @@ if __name__ == "__main__":
     matrix_data = []
     for q_name, q_path in paths.items():
         matrix_data.append(run_quant_benchmark(q_path, q_name))
+        gc.collect()
+        time.sleep(5)
 
     ram_results = run_caching_ablation(paths["Q4_K_M"], cache_type="ram")
+    gc.collect()
+    time.sleep(5)
+
     disk_results = run_caching_ablation(paths["Q4_K_M"], cache_type="disk")
+    gc.collect()
+    time.sleep(5)
 
     print("\n" + "=" * 40)
     print("FINAL BENCHMARK MATRIX")

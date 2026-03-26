@@ -54,8 +54,10 @@ Reduction_Percent: 38.63
 - Remembering to delete cache folder
 - The "stream" mode and how we used it to compute prefill/decode phase separately in Python
 - Ram cache vs disk cache
+- SIMD/AVX, packing/unpacking, dequantization, etc.
 
 
 ## Future TODO
 - Test on other hardware, i.e. NVIDIA Jetson and MacBook Metal.
 - Check RAM usage for ablation study as well.
+- Test MORE prompts for caching study, to see the effects on RAM using RamCache VS DiskCache.
