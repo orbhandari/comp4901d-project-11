@@ -118,6 +118,9 @@ def run_quant_benchmark(model_path, quant):
     mem_increase = peak_mem - baseline_mem
     prefill_tps = prompt_tokens / ttft_s if ttft_s > 0 else 0
 
+    gc.collect()
+    time.sleep(2)
+
     return {
         "Device": DEVICE_NAME,
         "Quant": quant,
@@ -165,6 +168,9 @@ def run_caching_ablation(model_path, cache_type="ram"):
 
     if cache_type == "disk" and os.path.exists(cache_dir):
         shutil.rmtree(cache_dir)
+        
+    gc.collect()
+    time.sleep(2)
 
     return {
         "Scenario": f"Shared Prefix ({cache_type.upper()})",
@@ -185,9 +191,6 @@ if __name__ == "__main__":
     matrix_data = []
     for q_name, q_path in paths.items():
         matrix_data.append(run_quant_benchmark(q_path, q_name))
-
-        gc.collect()
-        time.sleep(2)
 
     ram_results = run_caching_ablation(paths["Q4_K_M"], cache_type="ram")
     disk_results = run_caching_ablation(paths["Q4_K_M"], cache_type="disk")
