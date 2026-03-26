@@ -88,7 +88,7 @@ def run_quant_benchmark(model_path, quant):
 
     load_time_s = time.perf_counter() - start_load
 
-    prompt = "Explain the history of the Linux kernel in detail."
+    prompt = "Explain the history of the Linux kernel in detail." * 10
     prompt_tokens = len(llm.tokenize(prompt.encode("utf-8")))
 
     _ = llm("Warmup", max_tokens=5)
@@ -131,77 +131,79 @@ def run_quant_benchmark(model_path, quant):
 
 
 # ==========================================
-# Caching Ablation
+# Abalation study 
 # ==========================================
-def run_caching_ablation(model_path, cache_type="ram"):
-    print(f"\nStarting Prompt Caching Ablation Study ({cache_type.upper()} Cache)...")
+def get_clean_llm(model_path):
+    """Helper to ensure a fresh process state for every test."""
+    return Llama(model_path=model_path, n_ctx=CONTEXT_SIZE, verbose=False)
 
-    # Initialize process tracker
+def run_caching_ablation(model_path, cache_type="ram"):
+    print(f"\nStarting Robust Ablation ({cache_type.upper()})...")
     process = psutil.Process()
 
-    llm = Llama(model_path=model_path, n_ctx=CONTEXT_SIZE, verbose=False)
+    cache_folder_path = "./llm_cache_test"
+    if os.path.isdir(cache_folder_path):
+        shutil.rmtree(cache_folder_path)
+        print(f"Folder '{cache_folder_path}' has been removed.")
 
-    # Capture baseline AFTER model load but BEFORE cache generation
-    # This isolates the memory used specifically by the KV Cache
-    baseline_mem = process.memory_info().rss / (1024 * 1024)
+    # A much longer shared prefix (approx 500 tokens) to make the cache 'work'
+    shared_prefix = "Instruction: Summarize the following text in the style of a technical manual. " * 50
+    prompt_1 = shared_prefix + "Topic: Quantum Computing."
+    prompt_2 = shared_prefix + "Topic: Artificial Intelligence."
 
-    if cache_type == "disk":
-        cache_dir = "llm_cache_test"
-        if os.path.exists(cache_dir):
-            shutil.rmtree(cache_dir)
-            time.sleep(0.5) # Slight delay to ensure OS clears directory
-        os.makedirs(cache_dir)
-        cache = LlamaDiskCache(cache_dir=cache_dir)
-    elif cache_type == "ram":
-        # Note: 2GB capacity is assigned, but RAM is only consumed as it fills
-        cache = LlamaRAMCache(capacity_bytes=2 * (1 << 30))
-    else:
-        raise ValueError("cache_type must be either 'ram' or 'disk'")
-
-    llm.set_cache(cache)
-
-    prompt_1 = "I am a university student. Please help me complete X."
-    prompt_2 = "I am a university student. Please help me complete Y."
-
-    print(f"  -> Testing Cold Cache ({cache_type.upper()})...")
-    start_1 = time.time()
-    llm(prompt_1, max_tokens=10)
-    ttft_cold = (time.time() - start_1) * 1000
+    # --- 1. CONTROL (Clean LLM, No Cache) ---
+    llm_control = get_clean_llm(model_path)
+    base_mem = process.memory_info().rss / (1024 * 1024)
     
-    # Measure memory after first generation (Cache populated)
-    post_cold_mem = process.memory_info().rss / (1024 * 1024)
+    start_c = time.time()
+    llm_control(prompt_1, max_tokens=1) # Warm the internal buffer
+    llm_control(prompt_2, max_tokens=1)
+    ttft_control = (time.time() - start_c) * 1000
+    
+    no_cache_mem = process.memory_info().rss / (1024 * 1024)
+    del llm_control # Force cleanup
+    gc.collect()
 
-    print(f"  -> Testing Warm Cache ({cache_type.upper()})...")
+    # --- 2. EXPERIMENTAL (Clean LLM, With Cache) ---
+    llm_exp = get_clean_llm(model_path)
+    if cache_type == "disk":
+        cache = LlamaDiskCache(cache_dir="llm_cache_test")
+    else:
+        cache = LlamaRAMCache(capacity_bytes=2 * (1 << 30))
+    llm_exp.set_cache(cache)
+
+    # Cold Run
+    start_1 = time.time()
+    llm_exp(prompt_1, max_tokens=1)
+    ttft_cold = (time.time() - start_1) * 1000
+
+    # Warm Run (This should be significantly faster now)
     start_2 = time.time()
-    llm(prompt_2, max_tokens=10)
+    llm_exp(prompt_2, max_tokens=1)
     ttft_warm = (time.time() - start_2) * 1000
 
-    # Measure memory after second generation (Cache reused and extended)
-    post_warm_mem = process.memory_info().rss / (1024 * 1024)
+    with_cache_mem = process.memory_info().rss / (1024 * 1024)
 
-    # Calculate the total RAM overhead introduced during caching scenarios
-    cache_overhead = post_warm_mem - baseline_mem
+    cache_folder_path = "./llm_cache_test"
+    if os.path.isdir(cache_folder_path):
+        shutil.rmtree(cache_folder_path)
+        print(f"Folder '{cache_folder_path}' has been removed.")
 
-    # Cleanup
-    if cache_type == "disk" and os.path.exists(cache_dir):
-        shutil.rmtree(cache_dir)
-
+    # --- 3. METRICS ---
     return {
-        "Scenario": f"Shared Prefix ({cache_type.upper()})",
+        "Scenario": f"Large Prefix ({cache_type.upper()})",
         "TTFT_Cold_ms": round(ttft_cold, 2),
         "TTFT_Warm_ms": round(ttft_warm, 2),
         "Improvement_ms": round(ttft_cold - ttft_warm, 2),
-        "Reduction_Percent": round(((ttft_cold - ttft_warm) / ttft_cold) * 100, 2),
-        "Baseline_RAM_MB": round(baseline_mem, 2),
-        "Post_Cold_RAM_MB": round(post_cold_mem, 2),
-        "Post_Warm_RAM_MB": round(post_warm_mem, 2),
-        "Total_Cache_Overhead_MB": round(cache_overhead, 2),
+        "Isolated_Cache_Overhead_MB": round(with_cache_mem - no_cache_mem, 2),
     }
 
 # ==========================================
 # Main Orchestrator
 # ==========================================
 if __name__ == "__main__":
+
+
     print_device_info()
     paths = download_models()
 

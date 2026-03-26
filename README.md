@@ -14,26 +14,26 @@
 FINAL BENCHMARK MATRIX
 ========================================
                Device  Quant  Load_Time_s  Peak_RAM_MB  RAM_Increase_MB  TTFT_ms  Prefill_tps  Decode_tps
-x86_Arch_Linux_Laptop   Q8_0         0.44      8593.57          8494.06   780.31        15.38        4.51
-x86_Arch_Linux_Laptop Q4_K_M         1.03      8337.31          8173.40   633.89        18.93        7.43
+x86_Arch_Linux_Laptop   Q8_0         0.35      8609.23          8509.74  1836.46        55.54        9.99
+x86_Arch_Linux_Laptop Q4_K_M         0.79      8356.86          8191.29  1547.97        65.89       16.17
 
 ========================================
 PROMPT CACHING ABLATION (RAM Cache)
 ========================================
-Scenario: Shared Prefix (RAM)
-TTFT_Cold_ms: 1990.45
-TTFT_Warm_ms: 1522.43
-Improvement_ms: 468.02
-Reduction_Percent: 23.51
+Scenario: Large Prefix (RAM)
+TTFT_Cold_ms: 14969.76
+TTFT_Warm_ms: 228.09
+Improvement_ms: 14741.67
+Isolated_Cache_Overhead_MB: 701.07
 
 ========================================
 PROMPT CACHING ABLATION (Disk Cache)
 ========================================
-Scenario: Shared Prefix (DISK)
-TTFT_Cold_ms: 2582.98
-TTFT_Warm_ms: 1585.11
-Improvement_ms: 997.87
-Reduction_Percent: 38.63
+Scenario: Large Prefix (DISK)
+TTFT_Cold_ms: 14285.52
+TTFT_Warm_ms: 470.65
+Improvement_ms: 13814.87
+Isolated_Cache_Overhead_MB: 0.89```
 ```
 
 - Why Q4_K_M longer load time than Q8?
@@ -59,5 +59,5 @@ Reduction_Percent: 38.63
 
 ## Future TODO
 - Test on other hardware, i.e. NVIDIA Jetson and MacBook Metal.
-- Check RAM usage for ablation study as well.
-- Test MORE prompts for caching study, to see the effects on RAM using RamCache VS DiskCache.
+- Further check the "invisible" effect of the page cache.
+- Further check the effects of SIMD/AVX instructions and how it differs across hardware, esp. the Jetson.
