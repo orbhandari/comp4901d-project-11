@@ -6,7 +6,8 @@ This bypasses the llama-cpp-python "unsupported platform" issue on Android.
 """
 
 import logging
-import select
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -45,28 +46,30 @@ class NativeLlamaCpp:
         self.n_batch = n_batch
         
         # Try to find the best binary to use
-        # Priority: llama-cli -> main -> llama-simple
+        # Priority: main -> llama-simple -> llama-cli
+        # main is preferred because it's older and doesn't have conversation mode
         llama_cli_path_expanded = Path(llama_cli_path).expanduser()
         main_path = llama_cli_path_expanded.parent / "main"
         simple_path = llama_cli_path_expanded.parent / "llama-simple"
         
-        if llama_cli_path_expanded.exists():
-            self.llama_cli_path = llama_cli_path_expanded
-            self.binary_type = "llama-cli"
-        elif main_path.exists():
-            self.llama_cli_path = main_path
-            self.binary_type = "main"
-            logger.info(f"Using 'main' binary instead of 'llama-cli': {main_path}")
-        elif simple_path.exists():
-            self.llama_cli_path = simple_path
-            self.binary_type = "llama-simple"
-            logger.info(f"Using 'llama-simple' binary: {simple_path}")
+        binaries_to_try = [
+            ("main", main_path),
+            ("llama-simple", simple_path),
+            ("llama-cli", llama_cli_path_expanded),
+        ]
+        
+        for binary_type, binary_path in binaries_to_try:
+            if binary_path.exists():
+                self.llama_cli_path = binary_path
+                self.binary_type = binary_type
+                logger.info(f"Using '{binary_type}' binary: {binary_path}")
+                break
         else:
             raise FileNotFoundError(
                 f"No llama.cpp binary found. Tried:\n"
-                f"  - {llama_cli_path_expanded}\n"
                 f"  - {main_path}\n"
                 f"  - {simple_path}\n"
+                f"  - {llama_cli_path_expanded}\n"
                 "Build llama.cpp first:\n"
                 "  cd ~/llama.cpp\n"
                 "  cmake -B build -DCMAKE_BUILD_TYPE=Release\n"
@@ -100,10 +103,9 @@ class NativeLlamaCpp:
         Yields:
             Dictionary with 'choices' containing generated text chunks
         """
-        # Build command based on binary type
-        # Keep it simple - only use flags that are universally supported
-        # Wrap with timeout command to force kill if it hangs
-        base_cmd = [
+        # Build command with minimal flags to avoid triggering conversation mode
+        # No timeout wrapper - we handle timeout at Python level
+        cmd = [
             str(self.llama_cli_path),
             "-m", str(self.model_path),
             "-c", str(self.n_ctx),
@@ -113,67 +115,55 @@ class NativeLlamaCpp:
             "-p", prompt,
         ]
         
-        # Add binary-specific flags (only well-supported ones)
-        if self.binary_type == "llama-cli":
-            # llama-cli specific flags - only use widely supported ones
-            base_cmd.extend([
-                "--log-disable",  # Disable logging
-                "-ngl", "0",  # Disable GPU (already warned, but needed)
-            ])
-        elif self.binary_type == "main":
-            # main binary (older) - usually doesn't have conversation mode
-            base_cmd.extend([
-                "--log-disable",  # Disable logging
-                "-ngl", "0",  # Disable GPU
-            ])
+        # Calculate timeout: 2 seconds per token + 60s buffer
+        timeout_seconds = max_tokens * 2 + 60
         
-        # Wrap with timeout command (60 seconds should be enough for 50 tokens)
-        # This will kill the process if it hangs in conversation mode
-        timeout_seconds = max(60, max_tokens * 2)  # 2 seconds per token, minimum 60s
-        cmd = ["timeout", f"{timeout_seconds}s"] + base_cmd
+        logger.debug(f"Running {self.binary_type}: {' '.join(cmd)}")
+        logger.debug(f"Timeout: {timeout_seconds}s")
         
-        logger.debug(f"Running: {' '.join(cmd)}")
-        
-        # Run binary - use DEVNULL for stdin (don't send EOF, just close it completely)
+        # Run binary with process group creation for aggressive killing
         try:
             start_time = time.time()
             
-            # Use DEVNULL for stdin - completely closed, no EOF signal
-            # This is cleaner than sending EOF
+            # Create process with new session (process group)
+            # This allows us to kill all child processes
             process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.DEVNULL,  # Completely closed stdin
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                start_new_session=True  # Create new process group
             )
             
             # Wait for completion with timeout
             try:
-                stdout, stderr = process.communicate(timeout=timeout_seconds + 10)  # Extra 10s buffer
+                stdout, stderr = process.communicate(timeout=timeout_seconds)
+                
             except subprocess.TimeoutExpired:
-                logger.error(f"Binary timed out after {timeout_seconds + 10} seconds")
-                logger.error("This usually means the binary entered interactive/conversation mode")
-                logger.error("The 'timeout' command should have killed it, but communicate() also timed out")
-                process.kill()
+                logger.error(f"Process timed out after {timeout_seconds}s")
+                logger.error(f"Binary: {self.binary_type} at {self.llama_cli_path}")
+                logger.error(f"Command: {' '.join(cmd)}")
+                
+                # Kill entire process group with SIGKILL
+                try:
+                    pgid = os.getpgid(process.pid)
+                    os.killpg(pgid, signal.SIGKILL)
+                    logger.info(f"Killed process group {pgid} with SIGKILL")
+                except Exception as e:
+                    logger.warning(f"Failed to kill process group: {e}")
+                    # Fallback: kill just the parent process
+                    process.kill()
+                    logger.info("Killed parent process with SIGKILL (fallback)")
+                
+                # Wait for process to die
                 stdout, stderr = process.communicate()
+                
                 raise TimeoutError(
-                    f"{self.binary_type} timed out. "
-                    "It likely entered conversation mode. "
-                    "Try checking for alternative binaries with: ls ~/llama.cpp/build/bin/"
-                )
-            
-            # Check if timeout command killed the process (exit code 124)
-            if process.returncode == 124:
-                logger.error(f"Process was killed by timeout command after {timeout_seconds}s")
-                logger.error("This means llama-cli entered conversation mode and didn't exit")
-                logger.error(f"stdout: {stdout[:500]}")
-                logger.error(f"stderr: {stderr[:500]}")
-                raise TimeoutError(
-                    f"{self.binary_type} was killed by timeout after {timeout_seconds}s. "
-                    "It entered conversation mode (infinite > loop). "
-                    "Your llama-cli version may not support non-interactive mode. "
-                    "Check for 'main' binary: ls ~/llama.cpp/build/bin/main"
+                    f"{self.binary_type} timed out after {timeout_seconds}s. "
+                    f"It likely entered conversation mode (infinite > loop). "
+                    f"Try checking for alternative binaries: ls ~/llama.cpp/build/bin/ "
+                    f"If 'main' binary exists, it will be used automatically on next run."
                 )
             
             if process.returncode != 0:

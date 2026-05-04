@@ -1,0 +1,136 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** - llama-cli Hang Detection
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bug exists
+  - **Scoped PBT Approach**: For deterministic bugs, scope the property to the concrete failing case(s) to ensure reproducibility
+  - Test implementation details from Bug Condition in design:
+    - Invoke `llama-cli` with a simple prompt ("Hello") and small token count (10 tokens)
+    - Set a short timeout (10 seconds) to make the test fail quickly
+    - Check if process hangs and prints `>` characters (conversation mode)
+    - Check if process ignores SIGTERM signal
+    - Verify timeout command doesn't kill the process reliably
+  - The test assertions should match the Expected Behavior Properties from design:
+    - Process should exit cleanly within timeout (will FAIL on unfixed code)
+    - Stdout should NOT contain `>` characters (will FAIL on unfixed code)
+    - Process should respond to termination signals (will FAIL on unfixed code)
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found to understand root cause:
+    - Process hangs indefinitely and prints `>` characters
+    - Process ignores SIGTERM and SIGINT signals
+    - Timeout command doesn't kill the process reliably
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.7_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Streaming and TTFT Measurement
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for successful executions (non-buggy inputs):
+    - Run successful text generation on non-Android platforms (x86, Jetson)
+    - Observe character-by-character streaming output format
+    - Observe TTFT measurement accuracy and timing
+    - Observe configuration parameters (n_ctx, n_threads, n_batch)
+    - Observe tokenization approximation (1 token ≈ 4 characters)
+  - Write property-based tests capturing observed behavior patterns from Preservation Requirements:
+    - For all successful executions, streaming output format is preserved
+    - For all successful executions, TTFT measurement is accurate (within 10ms tolerance)
+    - For all successful executions, configuration parameters are unchanged
+    - For all successful executions, tokenization approximation is unchanged
+    - For all non-Android platforms, llama-cpp-python is used unchanged
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
+
+- [x] 3. Fix for llama-cli hang on Android
+
+  - [x] 3.1 Implement binary selection enhancement
+    - Modify `NativeLlamaCpp.__init__` to prefer `main` over `llama-cli`
+    - Check for binaries in priority order: `main` -> `llama-simple` -> `llama-cli`
+    - Log which binary is being used for debugging
+    - Store binary type in `self.binary_type` for later use
+    - _Bug_Condition: isBugCondition(execution) where execution.binary == "llama-cli" AND execution.stdout CONTAINS ">" AND execution.process_state == "running" AND execution.elapsed_time > expected_generation_time_
+    - _Expected_Behavior: Binary generates tokens and exits cleanly without hanging (expectedBehavior from design)_
+    - _Preservation: Non-Android platforms continue using llama-cpp-python unchanged (Preservation Requirements from design)_
+    - _Requirements: 2.1, 2.5, 2.6_
+
+  - [x] 3.2 Remove timeout command wrapper and implement Python-level timeout
+    - Remove `["timeout", f"{timeout_seconds}s"]` from command construction in `NativeLlamaCpp.__call__`
+    - Use `subprocess.communicate(timeout=...)` instead
+    - Set timeout to `max_tokens * 2 + 60` seconds (2 seconds per token + 60s buffer)
+    - On timeout, kill the entire process group with SIGKILL using `os.killpg()`
+    - Handle `subprocess.TimeoutExpired` exception and log timeout errors
+    - Provide troubleshooting information in error messages
+    - _Bug_Condition: isBugCondition(execution) where timeout command doesn't work reliably_
+    - _Expected_Behavior: Process is forcibly killed within timeout and error is handled appropriately (expectedBehavior from design)_
+    - _Preservation: Error logging and exception handling remain unchanged (Preservation Requirements from design)_
+    - _Requirements: 2.4, 3.5_
+
+  - [x] 3.3 Add process group creation for aggressive killing
+    - Add `start_new_session=True` to `subprocess.Popen` call in `NativeLlamaCpp.__call__`
+    - Import `os` and `signal` modules at top of file
+    - On timeout or error, kill entire process group with `os.killpg(os.getpgid(process.pid), signal.SIGKILL)`
+    - Handle errors gracefully if process group killing fails (fallback to `process.kill()`)
+    - Log process group ID and kill status for debugging
+    - _Bug_Condition: isBugCondition(execution) where process spawns child processes that survive parent termination_
+    - _Expected_Behavior: All processes in the group are killed, allowing benchmark to continue (expectedBehavior from design)_
+    - _Preservation: Process termination behavior on non-Android platforms remains unchanged (Preservation Requirements from design)_
+    - _Requirements: 2.3, 2.4_
+
+  - [x] 3.4 Simplify command flags to avoid triggering conversation mode
+    - Remove `--log-disable` flag from command construction (may not be supported in all versions)
+    - Remove `-ngl` flag from command construction (GPU is already disabled by default)
+    - Keep only essential flags: `-m`, `-c`, `-t`, `-b`, `-n`, `-p`
+    - Test with minimal flags to ensure conversation mode is not triggered
+    - _Bug_Condition: isBugCondition(execution) where certain flags trigger conversation mode as fallback behavior_
+    - _Expected_Behavior: Binary uses minimal flags and exits cleanly without entering conversation mode (expectedBehavior from design)_
+    - _Preservation: Model loading configuration (n_ctx, n_threads, n_batch) remains unchanged (Preservation Requirements from design)_
+    - _Requirements: 2.1, 3.2_
+
+  - [x] 3.5 Improve error messages and logging
+    - Add logging for which binary was selected and used
+    - Add logging for exact command being run
+    - On timeout, suggest trying alternative binaries
+    - Provide instructions for checking available binaries (`ls ~/llama.cpp/build/bin/`)
+    - Add troubleshooting steps for common issues (conversation mode, missing binaries)
+    - _Bug_Condition: isBugCondition(execution) where user needs to debug hang issues_
+    - _Expected_Behavior: Clear error messages with troubleshooting steps are provided (expectedBehavior from design)_
+    - _Preservation: Error logging format and exception types remain unchanged (Preservation Requirements from design)_
+    - _Requirements: 2.6, 3.5_
+
+  - [x] 3.6 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Clean Exit After Generation
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - Verify process exits cleanly within timeout
+    - Verify stdout does NOT contain `>` characters
+    - Verify process responds to termination signals
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [x] 3.7 Verify preservation tests still pass
+    - **Property 2: Preservation** - Streaming and TTFT Measurement
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Verify streaming output format is preserved
+    - Verify TTFT measurement accuracy is maintained
+    - Verify configuration parameters are unchanged
+    - Verify tokenization approximation is unchanged
+    - Verify non-Android platforms use llama-cpp-python unchanged
+    - Confirm all tests still pass after fix (no regressions)
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6_
+
+- [x] 4. Checkpoint - Ensure all tests pass
+  - Run all tests (exploration + preservation) to verify complete fix
+  - Verify no regressions on non-Android platforms
+  - Test on real Android device with actual model if possible
+  - Document any remaining issues or edge cases
+  - Ask the user if questions arise
