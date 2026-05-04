@@ -27,6 +27,8 @@ class NativeLlamaCpp:
         n_threads: int = 4,
         n_batch: int = 512,
         llama_cli_path: str = "~/llama.cpp/build/bin/llama-cli",
+        prompt_cache: Optional[str] = None,
+        prompt_cache_all: bool = False,
         **kwargs
     ):
         """
@@ -38,12 +40,16 @@ class NativeLlamaCpp:
             n_threads: Number of threads
             n_batch: Batch size for prompt processing
             llama_cli_path: Path to llama-cli binary
+            prompt_cache: Path to prompt cache file (for --prompt-cache flag)
+            prompt_cache_all: Whether to use --prompt-cache-all flag
             **kwargs: Additional arguments (ignored, for compatibility)
         """
         self.model_path = Path(model_path).expanduser()
         self.n_ctx = n_ctx
         self.n_threads = n_threads
         self.n_batch = n_batch
+        self.prompt_cache = prompt_cache
+        self.prompt_cache_all = prompt_cache_all
         self.last_subprocess_pid = None  # Track subprocess PID for memory measurement
         self.subprocess_is_running = False  # Track if subprocess is currently active
         self.subprocess_peak_memory_kb = 0  # Track peak memory during subprocess execution
@@ -117,6 +123,13 @@ class NativeLlamaCpp:
             "-n", str(max_tokens),
             "-p", prompt,
         ]
+        
+        # Add prompt cache flags if specified
+        if self.prompt_cache:
+            cmd.extend(["--prompt-cache", str(self.prompt_cache)])
+            if self.prompt_cache_all:
+                cmd.append("--prompt-cache-all")
+            logger.debug(f"Using prompt cache: {self.prompt_cache} (all={self.prompt_cache_all})")
         
         # Calculate timeout: 2 seconds per token + 60s buffer
         timeout_seconds = max_tokens * 2 + 60

@@ -1,0 +1,95 @@
+{
+  "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+  "models": {
+    "Q8_0": "tinyllama-1.1b-chat-v1.0.Q8_0.gguf",
+    "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf",
+    "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf"
+  },
+  "model_cache_dir": "~/storage/shared/models",
+  "output_dir": "~/storage/shared/benchmark_results",
+  
+  "test_prompt": "Explain the concept of machine learning in simple terms.",
+  "max_tokens": 100,
+  "context_size": 2048,
+  "iterations": 3,
+  "warmup_runs": 1,
+  
+  "enable_quantization_profiling": true,
+  "enable_ablation_studies": true,
+  "enable_batch_processing": true,
+  
+  "ablation_config": {
+    "_comment": "Android ablation studies now supported via AndroidAblationEngine!",
+    "_implementation": "Uses native llama.cpp --prompt-cache flag for disk caching tests",
+    "_supported_tests": ["prompt_cache_strategies", "batch_size_testing"],
+    "_note": "KV cache (RAM) is always enabled in native llama.cpp and cannot be disabled",
+    
+    "enable_kv_cache_tests": true,
+    "enable_prompt_caching_tests": true,
+    "enable_concurrent_caching_tests": false,
+    "enable_batch_size_tests": true,
+    
+    "batch_sizes": [128, 256, 512, 1024],
+    
+    "_note": "If you need more advanced caching tests:",
+    "_option1": "AndroidAblationEngine provides prompt cache testing (disk-based)",
+    "_option2": "KV cache (RAM) is always active but cannot be controlled",
+    "_option3": "For full cache control, use llama-cpp-python on supported platforms"
+  },
+  
+  "batch_config": {
+    "batch_sizes": [128, 256, 512, 1024],
+    "test_prompts": [
+      "What is artificial intelligence?",
+      "Explain quantum computing.",
+      "Describe the solar system."
+    ]
+  },
+  
+  "sleep_between_tests_s": 5,
+  "thermal_stabilization_threshold_c": 5.0,
+  "inference_timeout_s": 300,
+  
+  "save_formats": ["json", "csv", "markdown", "html"],
+  "visualization_dpi": 150,
+  
+  "_android_notes": {
+    "platform": "Android/Termux",
+    "llama_backend": "native_llama.cpp_cli",
+    "supported_features": [
+      "Quantization profiling (Q8_0, Q4_0, Q2_K, etc.)",
+      "Prompt cache ablation studies (disk-based via --prompt-cache)",
+      "Batch size testing and optimization",
+      "Memory usage tracking",
+      "Throughput measurement (TTFT, prefill TPS, decode TPS)",
+      "Statistical validation",
+      "Visualization generation",
+      "HTML report generation"
+    ],
+    "unsupported_features": [
+      "KV cache control (always enabled, cannot be disabled)",
+      "RAM vs disk cache comparison (KV cache is always RAM)",
+      "Concurrent caching tests (not yet implemented for Android)"
+    ],
+    "recommendations": [
+      "Use smaller quantizations (Q2_K, Q4_0) for limited RAM",
+      "Reduce context_size to 512 or 1024 if memory is tight",
+      "Enable batch_size_tests to find optimal batch size for your device",
+      "Monitor thermal throttling with thermal_stabilization_threshold_c",
+      "Use lower visualization_dpi (150) to save storage space"
+    ]
+  },
+  
+  "_example_usage": {
+    "command": "python -m llm_benchmark.main --config android_config_with_ablation.json",
+    "expected_tests": [
+      "Quantization profiling: Q8_0, Q4_0, Q2_K (3 iterations each)",
+      "Prompt cache ablation studies: control, cold cache, warm cache",
+      "Batch size testing: 128, 256, 512, 1024",
+      "Statistical validation",
+      "Visualization generation",
+      "HTML report generation"
+    ],
+    "skipped_tests": []
+  }
+}

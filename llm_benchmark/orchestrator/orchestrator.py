@@ -287,12 +287,23 @@ class TestOrchestrator:
         """
         logger.info("Starting ablation studies...")
         
-        # Create ablation engine
-        ablation_engine = AblationEngine(
-            backend=self.backend,
-            metrics_collector=self.metrics_collector,
-            context_size=self.config.context_size
-        )
+        # Create appropriate ablation engine based on platform
+        if self.backend.hw_info.os_type == "android":
+            from llm_benchmark.profiler.android_ablation import AndroidAblationEngine
+            logger.info("Using AndroidAblationEngine for native llama.cpp")
+            ablation_engine = AndroidAblationEngine(
+                backend=self.backend,
+                metrics_collector=self.metrics_collector,
+                context_size=self.config.context_size
+            )
+        else:
+            from llm_benchmark.profiler.ablation import AblationEngine
+            logger.info("Using standard AblationEngine for llama-cpp-python")
+            ablation_engine = AblationEngine(
+                backend=self.backend,
+                metrics_collector=self.metrics_collector,
+                context_size=self.config.context_size
+            )
         
         # Get first model for ablation testing
         # Use provided model_paths if available, otherwise try to construct paths
@@ -321,14 +332,24 @@ class TestOrchestrator:
         prompt_prefix = self._generate_long_prompt_prefix()
         prompt_suffix = " What are the key takeaways from this analysis?"
         
-        # Run KV cache ablation studies
-        results = ablation_engine.test_kv_cache_strategies(
-            model_path=model_path,
-            prompt_prefix=prompt_prefix,
-            prompt_suffix=prompt_suffix,
-            max_tokens=50,
-            cache_types=self.config.kv_cache_types
-        )
+        # Run ablation studies (method differs by platform)
+        if self.backend.hw_info.os_type == "android":
+            # Android uses prompt cache strategies (--prompt-cache flag)
+            results = ablation_engine.test_prompt_cache_strategies(
+                model_path=model_path,
+                prompt_prefix=prompt_prefix,
+                prompt_suffix=prompt_suffix,
+                max_tokens=50
+            )
+        else:
+            # Standard platform uses KV cache strategies (llama-cpp-python API)
+            results = ablation_engine.test_kv_cache_strategies(
+                model_path=model_path,
+                prompt_prefix=prompt_prefix,
+                prompt_suffix=prompt_suffix,
+                max_tokens=50,
+                cache_types=self.config.kv_cache_types
+            )
         
         logger.info(f"Ablation studies complete. Generated {len(results)} results.")
         
