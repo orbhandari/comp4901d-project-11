@@ -87,8 +87,12 @@ def validate_dependencies() -> bool:
     for module_name, package_desc in optional_packages.items():
         try:
             __import__(module_name)
-        except ImportError:
-            logger.warning(f"Optional package not installed: {package_desc}")
+        except (ImportError, RuntimeError) as e:
+            # RuntimeError can occur on Android when llama-cpp-python is installed but unsupported
+            if isinstance(e, RuntimeError) and "Unsupported platform" in str(e):
+                logger.warning(f"Optional package installed but unsupported on this platform: {package_desc}")
+            else:
+                logger.warning(f"Optional package not installed: {package_desc}")
     
     if missing_packages:
         logger.error("Missing required dependencies:")
