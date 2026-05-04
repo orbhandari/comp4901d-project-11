@@ -1,3 +1,0 @@
-# It is recommended to start a conda environment with pip installed:
-
-pip install huggingface_hub psutil pandas requests dotenv

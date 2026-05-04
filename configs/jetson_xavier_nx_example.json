@@ -1,0 +1,27 @@
+{
+  "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+  "models": {
+    "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf",
+    "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf"
+  },
+  "model_cache_dir": "./models",
+  "context_size": 1024,
+  "batch_size": 256,
+  "max_tokens": 100,
+  "iterations": 3,
+  "warmup_runs": 2,
+  "enable_quantization_profiling": true,
+  "enable_ablation_studies": true,
+  "enable_batch_testing": false,
+  "enable_thermal_monitoring": true,
+  "kv_cache_types": ["ram"],
+  "prompt_cache_prefix_lengths": [100, 500],
+  "batch_sizes": [1, 2, 4],
+  "sleep_between_tests_s": 10,
+  "thermal_stabilization_threshold_c": 65.0,
+  "inference_timeout_s": 300,
+  "output_dir": "./benchmark_results",
+  "save_formats": ["json", "csv", "markdown", "html"],
+  "visualization_dpi": 300,
+  "_comment": "Configuration optimized for NVIDIA Jetson Xavier NX with GPU acceleration. Uses smaller context_size and batch_size due to limited RAM (8GB). Thermal monitoring is enabled with lower threshold (65°C) due to passive cooling. Sleep between tests is increased to 10s for thermal stabilization. GPU layer offloading will be automatically configured based on available GPU memory."
+}

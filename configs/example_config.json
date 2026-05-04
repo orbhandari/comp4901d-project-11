@@ -1,0 +1,23 @@
+{
+  "repo_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+  "models": {
+    "Q8_0": "Meta-Llama-3.1-8B-Instruct-Q8_0.gguf",
+    "Q4_0": "Meta-Llama-3.1-8B-Instruct-Q4_0_4_8.gguf"
+  },
+  "model_cache_dir": "./models",
+  "context_size": 2048,
+  "batch_size": 512,
+  "max_tokens": 100,
+  "iterations": 3,
+  "warmup_runs": 2,
+  "enable_quantization_profiling": true,
+  "enable_ablation_studies": true,
+  "enable_batch_testing": false,
+  "enable_thermal_monitoring": true,
+  "sleep_between_tests_s": 5,
+  "thermal_stabilization_threshold_c": 70.0,
+  "inference_timeout_s": 300,
+  "output_dir": "./benchmark_results",
+  "save_formats": ["json", "csv", "markdown", "html"],
+  "visualization_dpi": 300
+}
