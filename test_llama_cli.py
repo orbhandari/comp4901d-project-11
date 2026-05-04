@@ -42,7 +42,8 @@ def test_llama_cli():
         "-p", "Hello, my name is",
         "--simple-io",
         "--no-display-prompt",
-        "--log-disable"
+        "--log-disable",
+        "-e"  # Exit after generation (non-interactive)
     ]
     
     print(f"Command: {' '.join(cmd)}")
@@ -90,7 +91,8 @@ def test_llama_cli():
         "-n", "20",
         "-p", "Hello, my name is",
         "--no-display-prompt",
-        "--log-disable"
+        "--log-disable",
+        "-e"  # Exit after generation (non-interactive)
     ]
     
     print(f"Command: {' '.join(cmd)}")
@@ -138,7 +140,8 @@ def test_llama_cli():
         "-n", "20",
         "-p", "Hello, my name is",
         "--no-display-prompt",
-        "--log-disable"
+        "--log-disable",
+        "-e"  # Exit after generation (non-interactive)
     ]
     
     print(f"Command: {' '.join(cmd)}")

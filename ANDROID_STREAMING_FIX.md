@@ -1,30 +1,38 @@
-# Android Streaming Fix - Inference Hanging Issue
+# Android Streaming Fix - Interactive Mode Issue
 
 ## Problem
 
-The benchmark was hanging at "performing measurement inference (50 tokens)" when using native llama.cpp on Android. The issue was in how we were reading output from the `llama-cli` subprocess.
+The benchmark was entering llama-cli's interactive prompt mode and waiting for user input instead of automatically completing generation and continuing with the benchmark.
 
 ## Root Cause
 
-The previous implementation used `readline()` which blocks waiting for a newline character. However, `llama-cli` outputs tokens character-by-character or word-by-word without necessarily adding newlines, causing the read to block indefinitely.
+By default, `llama-cli` can enter interactive mode where it waits for user input after generation. Without the proper flags, it doesn't automatically exit after completing the generation.
 
 ## Solution
 
 Updated `llm_benchmark/inference/native_llama.py` with:
 
-### 1. Non-Blocking I/O
+### 1. Non-Interactive Mode Flag
+- Added `-e` flag to tell llama-cli to process the prompt and exit
+- This prevents it from entering interactive mode
+
+### 2. Disable GPU Offloading
+- Added `-ngl 0` to disable GPU offloading
+- Some systems enter interactive mode when GPU is enabled
+
+### 3. Non-Blocking I/O
 - Uses `fcntl` to set stdout to non-blocking mode on Unix-like systems (including Android)
 - Prevents the read operation from blocking forever
 
-### 2. Character-by-Character Reading
+### 4. Character-by-Character Reading
 - Reads one character at a time instead of waiting for lines
 - Properly handles the streaming output from llama-cli
 
-### 3. Timeout Protection
+### 5. Timeout Protection
 - Adds a 5-minute timeout to detect if the process is truly hung
 - Kills the process if no output is received within the timeout period
 
-### 4. Better Error Handling
+### 6. Better Error Handling
 - Properly cleans up the subprocess if an error occurs
 - Catches and handles IOError/OSError from non-blocking reads
 
@@ -41,6 +49,8 @@ import os
 ```
 
 **Updated `__call__()` method:**
+- Added `-e` flag to exit after generation (non-interactive mode)
+- Added `-ngl 0` to disable GPU offloading (prevents interactive issues)
 - Set stdout to non-blocking mode using `fcntl`
 - Read character-by-character with timeout protection
 - Poll process status to detect completion
@@ -81,7 +91,43 @@ After the fix:
 
 ## Troubleshooting
 
-### If still hanging:
+### If still entering interactive mode:
+
+1. **Check llama-cli version:**
+   ```bash
+   ~/llama.cpp/build/bin/llama-cli --version
+   ```
+   
+   Different versions may have different flag names.
+
+2. **Try alternative flags:**
+   - Instead of `-e`, try `--one-shot` or `--run-once` (if available)
+   - Check `llama-cli --help` for available flags
+
+3. **Test manually:**
+   ```bash
+   ~/llama.cpp/build/bin/llama-cli \
+     -m ~/storage/shared/models/tinyllama-1.1b-chat-v1.0.Q2_K.gguf \
+     -n 20 \
+     -p "Hello" \
+     -e \
+     --no-display-prompt \
+     --log-disable
+   ```
+   
+   This should generate text and exit automatically without prompting for input.
+
+4. **Check for stdin issues:**
+   Make sure stdin is not being read. Try redirecting stdin from /dev/null:
+   ```python
+   process = subprocess.Popen(
+       cmd,
+       stdin=subprocess.DEVNULL,  # Don't read from stdin
+       stdout=subprocess.PIPE,
+       stderr=subprocess.PIPE,
+       text=True
+   )
+   ```
 
 1. **Check llama-cli output format:**
    ```bash

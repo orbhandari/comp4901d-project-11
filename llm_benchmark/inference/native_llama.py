@@ -82,6 +82,8 @@ class NativeLlamaCpp:
             Dictionary with 'choices' containing generated text chunks
         """
         # Build command
+        # CRITICAL: Use -ngl 0 to disable GPU (prevents interactive prompt on some systems)
+        # and ensure we're in non-interactive mode
         cmd = [
             str(self.llama_cli_path),
             "-m", str(self.model_path),
@@ -92,6 +94,8 @@ class NativeLlamaCpp:
             "-p", prompt,
             "--no-display-prompt",  # Don't echo prompt
             "--log-disable",  # Disable logging to stderr
+            "-ngl", "0",  # Disable GPU offloading (can cause interactive issues)
+            "-e",  # Process prompt and exit (non-interactive)
         ]
         
         logger.debug(f"Running: {' '.join(cmd)}")
@@ -100,6 +104,7 @@ class NativeLlamaCpp:
         try:
             process = subprocess.Popen(
                 cmd,
+                stdin=subprocess.DEVNULL,  # Don't read from stdin (prevents interactive mode)
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
