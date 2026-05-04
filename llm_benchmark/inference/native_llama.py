@@ -45,6 +45,8 @@ class NativeLlamaCpp:
         self.n_threads = n_threads
         self.n_batch = n_batch
         self.last_subprocess_pid = None  # Track subprocess PID for memory measurement
+        self.subprocess_is_running = False  # Track if subprocess is currently active
+        self.subprocess_peak_memory_kb = 0  # Track peak memory during subprocess execution
         
         # Try to find the best binary to use
         # Priority: main -> llama-simple -> llama-cli
@@ -137,13 +139,43 @@ class NativeLlamaCpp:
                 start_new_session=True  # Create new process group
             )
             
-            # Store subprocess PID for memory measurement
+            # Store subprocess PID and peak memory for measurement
             self.last_subprocess_pid = process.pid
+            self.subprocess_is_running = True  # Flag to indicate subprocess is active
+            self.subprocess_peak_memory_kb = 0  # Track peak memory during execution
             logger.debug(f"Subprocess PID: {self.last_subprocess_pid}")
+            
+            # Start a background thread to monitor subprocess memory
+            import threading
+            stop_monitoring = threading.Event()
+            
+            def monitor_memory():
+                """Monitor subprocess memory in background."""
+                import subprocess as sp
+                while not stop_monitoring.is_set():
+                    try:
+                        result = sp.run(
+                            ['ps', '-o', 'rss=', '-p', str(self.last_subprocess_pid)],
+                            capture_output=True,
+                            text=True,
+                            timeout=0.1
+                        )
+                        if result.returncode == 0 and result.stdout.strip():
+                            rss_kb = int(result.stdout.strip())
+                            self.subprocess_peak_memory_kb = max(self.subprocess_peak_memory_kb, rss_kb)
+                    except:
+                        pass
+                    time.sleep(0.05)  # Sample every 50ms
+            
+            monitor_thread = threading.Thread(target=monitor_memory, daemon=True)
+            monitor_thread.start()
             
             # Wait for completion with timeout
             try:
                 stdout, stderr = process.communicate(timeout=timeout_seconds)
+                self.subprocess_is_running = False  # Subprocess has terminated
+                stop_monitoring.set()  # Stop memory monitoring
+                monitor_thread.join(timeout=1)  # Wait for monitor thread to finish
                 
             except subprocess.TimeoutExpired:
                 logger.error(f"Process timed out after {timeout_seconds}s")

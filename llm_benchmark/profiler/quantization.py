@@ -90,18 +90,25 @@ class QuantizationProfiler:
             
             # Try to get subprocess memory using ps command
             try:
-                # Check if we have a NativeLlamaCpp instance with a subprocess PID
+                # Check if we have a NativeLlamaCpp instance with subprocess peak memory
                 if hasattr(self.backend, '_last_loaded_model'):
                     llm = self.backend._last_loaded_model
-                    if hasattr(llm, 'last_subprocess_pid') and llm.last_subprocess_pid:
+                    
+                    # First, try to use the peak memory captured during subprocess execution
+                    if hasattr(llm, 'subprocess_peak_memory_kb') and llm.subprocess_peak_memory_kb > 0:
+                        subprocess_memory = llm.subprocess_peak_memory_kb * 1024  # Convert KB to bytes
+                        total_rss += subprocess_memory
+                        logger.debug(f"Added subprocess peak memory: {subprocess_memory / (1024 * 1024):.2f} MB (captured during execution)")
+                    # Fallback: try to read current memory if subprocess is still running
+                    elif hasattr(llm, 'last_subprocess_pid') and llm.last_subprocess_pid:
                         subprocess_memory = self._read_memory_from_ps(llm.last_subprocess_pid)
                         if subprocess_memory > 0:
                             total_rss += subprocess_memory
                             logger.debug(f"Added subprocess memory: {subprocess_memory / (1024 * 1024):.2f} MB (PID: {llm.last_subprocess_pid})")
                         else:
-                            logger.debug(f"Subprocess PID {llm.last_subprocess_pid} not found in ps output")
+                            logger.debug(f"Subprocess PID {llm.last_subprocess_pid} not found in ps output (already terminated)")
             except Exception as e:
-                logger.debug(f"ps command fallback failed: {e}")
+                logger.debug(f"Subprocess memory measurement failed: {e}")
             
             # Log warning only if we couldn't get subprocess memory
             if total_rss == self.process.memory_info().rss:
