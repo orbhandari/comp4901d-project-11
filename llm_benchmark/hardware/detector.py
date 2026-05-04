@@ -78,9 +78,13 @@ class HardwareDetector:
     
     @staticmethod
     def _detect_os_type() -> str:
-        """Detect OS type (linux_x86 or jetson_xavier_nx)."""
+        """Detect OS type (linux_x86, jetson_xavier_nx, or android)."""
         system = platform.system()
         machine = platform.machine()
+        
+        # Check for Android first
+        if HardwareDetector._is_android():
+            return "android"
         
         if system != "Linux":
             logger.warning(f"Unsupported OS: {system}. Assuming linux_x86.")
@@ -106,16 +110,64 @@ class HardwareDetector:
         return "linux_x86"
     
     @staticmethod
+    def _is_android() -> bool:
+        """Check if running on Android."""
+        # Check for Android-specific markers
+        android_markers = [
+            "/system/build.prop",
+            "/system/bin/app_process",
+            "/system/bin/dalvikvm"
+        ]
+        
+        for marker in android_markers:
+            if Path(marker).exists():
+                return True
+        
+        # Check environment variables
+        if os.environ.get('ANDROID_ROOT') or os.environ.get('ANDROID_DATA'):
+            return True
+        
+        # Check if running in Termux
+        if os.environ.get('PREFIX', '').endswith('/com.termux/files/usr'):
+            return True
+        
+        return False
+    
+    @staticmethod
     def _detect_cpu_model() -> str:
         """Detect CPU model."""
         try:
             # Try to read from /proc/cpuinfo
             with open('/proc/cpuinfo', 'r') as f:
-                for line in f:
+                content = f.read()
+                
+                # For x86/x64
+                for line in content.split('\n'):
                     if line.startswith('model name'):
+                        return line.split(':', 1)[1].strip()
+                
+                # For ARM (Android, Jetson)
+                for line in content.split('\n'):
+                    if line.startswith('Hardware'):
+                        return line.split(':', 1)[1].strip()
+                
+                # Try Processor field
+                for line in content.split('\n'):
+                    if line.startswith('Processor'):
                         return line.split(':', 1)[1].strip()
         except Exception as e:
             logger.debug(f"Error reading /proc/cpuinfo: {e}")
+        
+        # Try Android-specific properties
+        if HardwareDetector._is_android():
+            try:
+                # Try to read from build.prop
+                with open('/system/build.prop', 'r') as f:
+                    for line in f:
+                        if line.startswith('ro.product.board') or line.startswith('ro.board.platform'):
+                            return line.split('=', 1)[1].strip()
+            except Exception as e:
+                logger.debug(f"Error reading build.prop: {e}")
         
         # Fallback to platform.processor()
         processor = platform.processor()

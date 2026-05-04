@@ -121,25 +121,96 @@ class QuantizationProfiler:
             logger.warning(f"Warmup inference failed: {e}")
             # Continue anyway - warmup failure shouldn't stop profiling
         
-        # Measure peak memory after warmup
-        peak_ram_mb = self.process.memory_info().rss / (1024 * 1024)
-        logger.info(f"Peak memory after warmup: {peak_ram_mb:.2f} MB")
+        # Measure memory after warmup
+        post_warmup_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        logger.info(f"Memory after warmup: {post_warmup_memory_mb:.2f} MB")
         
-        # Perform measurement inference with streaming to capture TTFT accurately
+        # Initialize peak memory tracker
+        peak_ram_mb = post_warmup_memory_mb
+        
+        # Perform measurement inference with memory tracking during generation
         logger.info(f"Performing measurement inference ({max_tokens} tokens)...")
         
         try:
-            inference_metrics = self.metrics.collect_inference_metrics(
-                llm=llm,
-                prompt=prompt,
+            # Use streaming inference and sample memory during generation
+            stream = llm(
+                prompt,
                 max_tokens=max_tokens,
-                enable_background_monitoring=False  # Disable for quantization profiling
+                stream=True,
+                echo=False
             )
+            
+            # Track TTFT and tokens for metrics
+            start_time = time.perf_counter()
+            first_token_time = None
+            output_tokens = 0
+            
+            # Sample memory during token generation
+            for chunk in stream:
+                current_time = time.perf_counter()
+                
+                # Capture TTFT
+                if first_token_time is None:
+                    first_token_time = current_time
+                
+                # Sample memory during inference (this captures peak during full context allocation)
+                current_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+                peak_ram_mb = max(peak_ram_mb, current_memory_mb)
+                
+                output_tokens += 1
+            
+            end_time = time.perf_counter()
+            
+            # Calculate metrics
+            total_time_s = end_time - start_time
+            
+            if first_token_time is None:
+                ttft_ms = 0.0
+                ttft_s = 0.0
+            else:
+                ttft_s = first_token_time - start_time
+                ttft_ms = ttft_s * 1000
+            
+            # Tokenize prompt to count tokens
+            try:
+                prompt_tokens = len(llm.tokenize(prompt.encode('utf-8')))
+            except Exception as e:
+                logger.warning(f"Failed to tokenize prompt: {e}")
+                prompt_tokens = len(prompt) // 4
+            
+            # Calculate throughput
+            if ttft_s > 0 and prompt_tokens > 0:
+                prefill_tps = prompt_tokens / ttft_s
+            else:
+                prefill_tps = 0.0
+            
+            decode_duration = total_time_s - ttft_s
+            if decode_duration > 0 and output_tokens > 1:
+                decode_tps = (output_tokens - 1) / decode_duration
+            else:
+                decode_tps = 0.0
+            
+            # Create a simple metrics object
+            class SimpleInferenceMetrics:
+                def __init__(self, ttft_ms, prefill_tps, decode_tps, prompt_tokens, output_tokens):
+                    self.ttft_ms = round(ttft_ms, 2)
+                    self.prefill_tps = round(prefill_tps, 2)
+                    self.decode_tps = round(decode_tps, 2)
+                    self.prompt_tokens = prompt_tokens
+                    self.output_tokens = output_tokens
+                    self.gpu_memory_mb = None
+                    self.gpu_utilization_pct = None
+                    self.used_gpu_acceleration = False
+            
+            inference_metrics = SimpleInferenceMetrics(
+                ttft_ms, prefill_tps, decode_tps, prompt_tokens, output_tokens
+            )
+            
         except Exception as e:
             logger.error(f"Inference failed: {e}")
             raise
         
-        # Update peak memory if inference used more
+        # Final memory check
         final_memory_mb = self.process.memory_info().rss / (1024 * 1024)
         peak_ram_mb = max(peak_ram_mb, final_memory_mb)
         

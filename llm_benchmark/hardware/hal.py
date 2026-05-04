@@ -665,6 +665,308 @@ class JetsonBackend(HardwareBackend):
         pass
 
 
+class AndroidBackend(HardwareBackend):
+    """Hardware backend for Android smartphones."""
+    
+    def get_llama_config(self) -> Dict[str, Any]:
+        """
+        Return optimized configuration for Android.
+        
+        Android-specific optimizations:
+        - Conservative thread count (leave cores for system)
+        - No mlock (limited RAM on mobile)
+        - Smaller batch size for memory efficiency
+        
+        Returns:
+            Configuration dictionary for llama-cpp-python
+        """
+        # Use fewer threads on mobile to avoid thermal issues
+        # Leave at least 2 cores for system
+        thread_count = max(2, self.hw_info.cpu_cores - 2)
+        
+        config = {
+            "n_gpu_layers": 0,  # CPU-only (most Android devices don't support GPU acceleration for llama.cpp)
+            "use_mlock": False,  # Don't lock memory on mobile
+            "n_threads": thread_count,  # Conservative thread count
+            "n_batch": 256,  # Smaller batch size for memory efficiency
+        }
+        
+        logger.info(f"Android backend configuration: {config}")
+        logger.info(f"Using {thread_count}/{self.hw_info.cpu_cores} CPU cores")
+        return config
+    
+    def get_metrics_collector(self) -> "MetricsCollector":
+        """
+        Return metrics collector for Android platform.
+        
+        Returns:
+            MetricsCollector instance configured for Android (CPU-only metrics)
+        """
+        from llm_benchmark.metrics import MetricsCollector
+        return MetricsCollector(self.hw_info)
+    
+    def load_model_safe(self, model_path: str, **kwargs) -> Any:
+        """
+        Load model with Android-specific error handling.
+        
+        On Android, uses native llama.cpp CLI instead of llama-cpp-python
+        to bypass the "unsupported platform" issue.
+        
+        Implements error handling for:
+        - GGUF format validation before loading
+        - Available memory checking (critical on mobile)
+        - Insufficient RAM with mobile-specific suggestions
+        - Corrupted GGUF files with validation errors
+        - Missing native llama.cpp binary
+        
+        Args:
+            model_path: Path to GGUF model file
+            **kwargs: Additional arguments for model loading
+        
+        Returns:
+            Loaded model instance (NativeLlamaCpp or Llama), or None if loading fails
+        """
+        from pathlib import Path
+        
+        # Check if native llama.cpp is available
+        llama_cli = Path("~/llama.cpp/build/bin/llama-cli").expanduser()
+        
+        if llama_cli.exists():
+            logger.info("Using native llama.cpp CLI (Android)")
+            
+            # Validate GGUF format before loading
+            if not self._validate_gguf_format(model_path):
+                logger.error(f"Invalid GGUF format: {model_path}")
+                logger.info("Suggestion: File may be corrupted, try re-downloading")
+                return None
+            
+            # Check available memory before loading (critical on mobile)
+            if not self._check_available_memory(model_path, kwargs.get('n_ctx', 2048)):
+                logger.error(f"Insufficient RAM to load model: {model_path}")
+                logger.info("Suggestions for Android:")
+                logger.info("  - Use smaller quantization (Q2_K or Q4_0)")
+                logger.info("  - Reduce context_size to 512 or 1024")
+                logger.info("  - Close background apps to free memory")
+                logger.info("  - Use a smaller model (< 1B parameters)")
+                return None
+            
+            # Get configuration
+            config = self.get_llama_config()
+            config.update(kwargs)
+            
+            try:
+                from llm_benchmark.inference.native_llama import NativeLlamaCpp
+                
+                logger.info("Loading model with native llama.cpp (this may take a while)...")
+                llm = NativeLlamaCpp(
+                    model_path=model_path,
+                    n_ctx=config.get('n_ctx', 2048),
+                    n_threads=config.get('n_threads', 4),
+                    n_batch=config.get('n_batch', 512),
+                    llama_cli_path=str(llama_cli)
+                )
+                logger.info(f"Successfully loaded model: {model_path}")
+                return llm
+                
+            except Exception as e:
+                logger.error(f"Failed to load model with native llama.cpp: {e}", exc_info=True)
+                logger.info("Android troubleshooting:")
+                logger.info("  - Ensure llama.cpp is built: cd ~/llama.cpp && ls build/bin/llama-cli")
+                logger.info("  - Ensure you have enough free RAM (check with 'free -h')")
+                logger.info("  - Try a smaller model or lower quantization")
+                return None
+        
+        else:
+            # Native llama.cpp not found, provide instructions
+            logger.error("Native llama.cpp not found at ~/llama.cpp/build/bin/llama-cli")
+            logger.info("")
+            logger.info("=" * 70)
+            logger.info("ANDROID SETUP REQUIRED")
+            logger.info("=" * 70)
+            logger.info("")
+            logger.info("llama-cpp-python doesn't support Android. You need to build native llama.cpp:")
+            logger.info("")
+            logger.info("1. Install build dependencies:")
+            logger.info("   pkg install git cmake clang")
+            logger.info("")
+            logger.info("2. Clone and build llama.cpp:")
+            logger.info("   cd ~")
+            logger.info("   git clone https://github.com/ggerganov/llama.cpp")
+            logger.info("   cd llama.cpp")
+            logger.info("   cmake -B build -DCMAKE_BUILD_TYPE=Release")
+            logger.info("   cmake --build build --config Release -j4")
+            logger.info("")
+            logger.info("3. Verify the build:")
+            logger.info("   ls -lh ~/llama.cpp/build/bin/llama-cli")
+            logger.info("")
+            logger.info("4. Test with a model:")
+            logger.info("   ~/llama.cpp/build/bin/llama-cli -m <model.gguf> -p 'Hello' -n 10")
+            logger.info("")
+            logger.info("5. Then run the benchmark again")
+            logger.info("")
+            logger.info("=" * 70)
+            logger.info("")
+            
+            return None
+    
+    def _validate_gguf_format(self, model_path: str) -> bool:
+        """
+        Validate GGUF format by checking magic bytes and header structure.
+        
+        Args:
+            model_path: Path to GGUF file
+        
+        Returns:
+            True if valid GGUF format, False otherwise
+        """
+        try:
+            import struct
+            
+            with open(model_path, 'rb') as f:
+                # Read magic bytes (4 bytes)
+                magic = f.read(4)
+                
+                if magic != b'GGUF':
+                    logger.warning(f"Invalid magic bytes: {magic}")
+                    return False
+                
+                # Read version (4 bytes, uint32, little-endian)
+                version_bytes = f.read(4)
+                if len(version_bytes) < 4:
+                    logger.warning("File too short to contain version")
+                    return False
+                
+                version = struct.unpack('<I', version_bytes)[0]
+                
+                # Basic sanity check
+                if version > 100:  # Arbitrary upper bound
+                    logger.warning(f"Suspicious version number: {version}")
+                    return False
+                
+                logger.debug(f"GGUF validation passed (version {version})")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error validating GGUF format: {e}")
+            return False
+    
+    def _check_available_memory(self, model_path: str, context_size: int) -> bool:
+        """
+        Check if sufficient RAM is available to load model.
+        
+        More conservative on Android due to limited RAM and system overhead.
+        
+        Args:
+            model_path: Path to model file
+            context_size: Context size for model
+        
+        Returns:
+            True if sufficient memory available, False otherwise
+        """
+        try:
+            import psutil
+            import os
+            
+            # Get model file size
+            model_size_mb = os.path.getsize(model_path) / (1024 * 1024)
+            
+            # Estimate memory requirements (more conservative on mobile):
+            # - Model weights: file size
+            # - Context buffer: ~context_size * 2 bytes per token * safety factor
+            # - Overhead: ~30% of model size (higher on mobile)
+            context_mb = (context_size * 2 * 2.0) / (1024 * 1024)  # 2x safety factor
+            overhead_mb = model_size_mb * 0.3  # 30% overhead
+            required_mb = model_size_mb + context_mb + overhead_mb
+            
+            # Get available memory
+            mem = psutil.virtual_memory()
+            available_mb = mem.available / (1024 * 1024)
+            
+            # More conservative on mobile: require 70% headroom
+            usable_mb = available_mb * 0.7
+            
+            if required_mb > usable_mb:
+                logger.warning(
+                    f"Insufficient RAM: need ~{required_mb:.0f}MB, "
+                    f"have {available_mb:.0f}MB available (usable: {usable_mb:.0f}MB)"
+                )
+                return False
+            
+            logger.debug(
+                f"Memory check passed: need ~{required_mb:.0f}MB, "
+                f"have {available_mb:.0f}MB available"
+            )
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Could not check available memory: {e}")
+            # Assume sufficient memory if check fails
+            return True
+    
+    def check_thermal_state(self, threshold_c: float = 70.0) -> tuple:
+        """
+        Check if device is thermally throttled.
+        
+        Reads from Android thermal zones to detect overheating.
+        
+        Args:
+            threshold_c: Temperature threshold in Celsius for throttling detection
+        
+        Returns:
+            Tuple of (is_throttled, current_temp) where is_throttled is True
+            if temperature exceeds threshold, and current_temp is the highest
+            temperature in Celsius (or None if unavailable)
+        """
+        try:
+            from pathlib import Path
+            
+            thermal_dir = Path("/sys/class/thermal")
+            if not thermal_dir.exists():
+                return False, None
+            
+            max_temp = 0.0
+            
+            # Read all thermal zones
+            for zone_dir in thermal_dir.glob("thermal_zone*"):
+                temp_file = zone_dir / "temp"
+                if temp_file.exists():
+                    try:
+                        with open(temp_file, 'r') as f:
+                            # Temperature is in millidegrees Celsius
+                            temp_millic = int(f.read().strip())
+                            temp_c = temp_millic / 1000.0
+                            max_temp = max(max_temp, temp_c)
+                    except Exception as e:
+                        logger.debug(f"Error reading {temp_file}: {e}")
+            
+            if max_temp == 0.0:
+                return False, None
+            
+            is_throttled = max_temp > threshold_c
+            
+            if is_throttled:
+                logger.warning(
+                    f"Device temperature ({max_temp:.1f}°C) exceeds threshold ({threshold_c}°C)"
+                )
+            
+            return is_throttled, max_temp
+            
+        except Exception as e:
+            logger.debug(f"Failed to check thermal state: {e}")
+            return False, None
+    
+    def optimize_for_inference(self) -> None:
+        """Apply Android-specific optimizations."""
+        logger.info("Applying Android optimizations...")
+        
+        # Log recommendations
+        logger.info("Android optimization tips:")
+        logger.info("  - Keep device plugged in during benchmarking")
+        logger.info("  - Close background apps to free RAM")
+        logger.info("  - Enable performance mode if available")
+        logger.info("  - Keep device cool to avoid thermal throttling")
+
+
 def create_backend(hw_info: HardwareInfo) -> HardwareBackend:
     """
     Create appropriate hardware backend based on detected platform.
@@ -677,5 +979,7 @@ def create_backend(hw_info: HardwareInfo) -> HardwareBackend:
     """
     if hw_info.os_type == "jetson_xavier_nx":
         return JetsonBackend(hw_info)
+    elif hw_info.os_type == "android":
+        return AndroidBackend(hw_info)
     else:
         return X86Backend(hw_info)

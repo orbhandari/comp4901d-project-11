@@ -1,0 +1,47 @@
+{
+  "_comment": "Configuration optimized for Android smartphones (tested on Xiaomi 13T with 12GB RAM)",
+  
+  "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+  "models": {
+    "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf",
+    "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf"
+  },
+  
+  "_comment_storage": "Use shared storage for easy access from file manager",
+  "model_cache_dir": "./models",
+  "output_dir": "./benchmark_results",
+  
+  "_comment_memory": "Conservative settings for mobile devices",
+  "context_size": 512,
+  "batch_size": 256,
+  "max_tokens": 50,
+  
+  "_comment_iterations": "Fewer iterations to reduce benchmark time and thermal load",
+  "iterations": 3,
+  "warmup_runs": 1,
+  
+  "_comment_tests": "Disable resource-intensive tests on mobile",
+  "enable_quantization_profiling": true,
+  "enable_ablation_studies": false,
+  "enable_batch_testing": false,
+  "enable_thermal_monitoring": true,
+  
+  "_comment_thermal": "Longer sleep time to prevent overheating",
+  "sleep_between_tests_s": 15,
+  "thermal_stabilization_threshold_c": 70.0,
+  "inference_timeout_s": 600,
+  
+  "_comment_output": "Skip HTML to reduce processing time on mobile",
+  "save_formats": ["json", "csv", "markdown"],
+  "visualization_dpi": 150,
+  
+  "_comment_tips": [
+    "Keep device plugged in during benchmarking",
+    "Close background apps to free RAM",
+    "Remove phone case for better cooling",
+    "Monitor temperature: cat /sys/class/thermal/thermal_zone*/temp",
+    "Check memory: free -h",
+    "For even lighter benchmarking, use only Q2_K model",
+    "Reduce context_size to 256 if running out of memory"
+  ]
+}

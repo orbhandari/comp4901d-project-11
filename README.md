@@ -7,15 +7,16 @@ A comprehensive, cross-platform framework for benchmarking large language model 
 
 ## Features
 
-- 🖥️ **Cross-Platform Support**: Linux x86 and NVIDIA Jetson Xavier NX
+- 🖥️ **Cross-Platform Support**: Linux x86, NVIDIA Jetson Xavier NX, and Android smartphones
 - 🔍 **Automatic Hardware Detection**: CPU, GPU, memory, and sensors
 - 📊 **Multi-Level Quantization Profiling**: Q8_0, Q4_0, Q4_K_M, Q2_K
-- ⚡ **GPU Acceleration**: Automatic GPU offloading with CPU fallback
+- ⚡ **GPU Acceleration**: Automatic GPU offloading with CPU fallback (Jetson)
 - 🧪 **Ablation Studies**: KV cache and prompt caching effectiveness
 - 📈 **Batch Processing**: Throughput optimization testing (planned feature)
 - 📉 **Statistical Validation**: Confidence intervals, t-tests, outlier detection
 - 📱 **Interactive Reports**: Professional HTML reports with embedded visualizations
 - 🔄 **Reproducible Results**: Complete environment capture and checksums
+- 📲 **Mobile Support**: Run benchmarks on Android devices via Termux
 
 ## Quick Start
 
@@ -60,6 +61,9 @@ python -m llm_benchmark --config configs/x86_linux_example.json
 
 # For Jetson Xavier NX
 python -m llm_benchmark --config configs/jetson_xavier_nx_example.json
+
+# For Android smartphones
+python -m llm_benchmark --config configs/android_example.json
 ```
 
 Or create your own `config.json`:
@@ -127,6 +131,7 @@ benchmark_results/
 ## Documentation
 
 - **[User Guide](docs/USER_GUIDE.md)**: Comprehensive usage guide
+- **[Android Setup Guide](docs/ANDROID_SETUP.md)**: Running benchmarks on Android devices
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)**: Common issues and solutions
 - **[CI/CD Setup](docs/CI_CD_SETUP.md)**: Continuous integration configuration
 - **[Examples](examples/)**: Sample scripts and configurations
@@ -148,6 +153,26 @@ benchmark_results/
 - ✅ Power monitoring (built-in sensors)
 - ✅ All quantization levels
 - ✅ Optimized for ARM64 architecture
+
+### Android Smartphones
+
+- ✅ **Fully Supported** - Uses native llama.cpp (bypasses llama-cpp-python)
+- ✅ CPU-only inference (ARM64)
+- ✅ Thermal monitoring
+- ✅ Optimized for mobile (conservative memory/CPU usage)
+- ✅ Tested on Xiaomi 13T (12GB RAM, Android 15)
+- ✅ Runs via Termux terminal emulator
+- 📖 **[Android Setup Guide](docs/ANDROID_SETUP.md)** - Complete installation instructions
+- 🚀 **[Quick Start](ANDROID_QUICK_START.md)** - Get running in 30 minutes
+
+**How it works**: The framework automatically detects Android and uses native llama.cpp CLI instead of llama-cpp-python, bypassing the "unsupported platform" issue entirely.
+
+**Recommended for Android**:
+- 6GB+ RAM (8GB+ recommended)
+- Use Q2_K or Q4_0 quantization
+- Small models (< 2B parameters)
+- Build llama.cpp in Termux (~30 minutes)
+- See [Android Setup Guide](docs/ANDROID_SETUP.md) for step-by-step instructions
 
 ### macOS (Experimental)
 
