@@ -22,7 +22,40 @@
     "_comment": "Android ablation studies now supported via AndroidAblationEngine!",
     "_implementation": "Uses native llama.cpp --prompt-cache flag for disk caching tests",
     "_supported_tests": ["prompt_cache_strategies", "batch_size_testing"],
-    "_note": "KV cache (RAM) is always enabled in native llama.cpp and cannot be disabled",
+    
+    "_CRITICAL_LIMITATION": {
+      "what_it_measures": "Incremental benefit of adding disk cache ON TOP OF always-active RAM KV cache",
+      "what_it_does_NOT_measure": [
+        "Pure RAM cache effect (no true 'no cache' baseline exists)",
+        "RAM vs Disk comparison (both active simultaneously in cold/warm runs)",
+        "True overhead of each cache type independently"
+      ],
+      "test_scenarios": {
+        "control": "KV cache only (RAM, always active) - NOT a true 'no cache' baseline",
+        "cold": "KV cache (RAM) + Prompt cache (Disk, creating file)",
+        "warm": "KV cache (RAM) + Prompt cache (Disk, loaded from file)"
+      },
+      "why": "llama-cli CANNOT disable KV cache - it's always active in RAM",
+      "workaround": "Use llama-server with --cache-ram 0 for true cache control"
+    },
+    
+    "_IMPORTANT_CACHE_CONTROL": {
+      "limitation": "llama-cli CANNOT disable KV cache (always active in RAM)",
+      "workaround_1": "Use llama-server with --cache-ram 0 --no-cache-prompt flags",
+      "workaround_2": "Use llama-cpp-python on supported platforms (can set cache=False)",
+      "impact": "Control runs will have KV cache active, not a true 'no cache' baseline",
+      "recommendation": "For accurate ablation studies, use llama-server instead of llama-cli"
+    },
+    
+    "_llama_server_example": {
+      "start_server": "llama-server --model model.gguf --cache-ram 0 --no-cache-prompt --port 8080",
+      "api_request": {
+        "prompt": "Your prompt here",
+        "max_tokens": 100,
+        "cache_prompt": false
+      },
+      "note": "cache_prompt must be false in API requests, defaults to true if omitted"
+    },
     
     "enable_kv_cache_tests": true,
     "enable_prompt_caching_tests": true,
@@ -31,10 +64,17 @@
     
     "batch_sizes": [128, 256, 512, 1024],
     
-    "_note": "If you need more advanced caching tests:",
+    "_interpretation_guide": {
+      "control_vs_cold": "Shows overhead of CREATING disk cache (may be slower due to I/O)",
+      "control_vs_warm": "Shows benefit of ADDING disk cache to existing RAM cache",
+      "cold_vs_warm": "Shows benefit of LOADING vs CREATING disk cache",
+      "note": "All comparisons have RAM KV cache active in both scenarios"
+    },
+    
+    "_note_advanced": "If you need more advanced caching tests:",
     "_option1": "AndroidAblationEngine provides prompt cache testing (disk-based)",
     "_option2": "KV cache (RAM) is always active but cannot be controlled",
-    "_option3": "For full cache control, use llama-cpp-python on supported platforms"
+    "_option3": "For full cache control, use llama-server or llama-cpp-python on supported platforms"
   },
   
   "batch_config": {

@@ -4,6 +4,26 @@ Android-specific Ablation Engine for native llama.cpp CLI.
 This module provides ablation testing for Android/Termux using native llama.cpp's
 --prompt-cache feature instead of llama-cpp-python's cache API.
 
+IMPORTANT LIMITATION:
+====================
+This engine CANNOT measure pure RAM vs Disk caching effects because:
+- KV cache (RAM) is ALWAYS enabled in llama-cli and cannot be disabled
+- All test runs have KV cache active (no true "no cache" baseline)
+- "Control" run is NOT a true baseline - it has KV cache active
+
+What This Engine Actually Measures:
+===================================
+- Control:    KV cache only (RAM, always active)
+- Cold cache: KV cache (RAM) + Prompt cache (Disk, creating)
+- Warm cache: KV cache (RAM) + Prompt cache (Disk, loaded)
+
+Therefore, results show:
+- Incremental benefit of ADDING disk-based prompt cache to existing RAM KV cache
+- NOT the pure effect of RAM caching (no true baseline)
+- NOT a comparison of RAM vs Disk (both active simultaneously)
+
+For accurate RAM vs Disk cache comparison, use llama-server with --cache-ram 0.
+
 Key differences from standard AblationEngine:
 - Uses --prompt-cache flag for disk-based caching
 - Uses --prompt-cache-all for full prompt caching
@@ -88,13 +108,23 @@ class AndroidAblationEngine:
         """
         Test prompt caching using native llama.cpp's --prompt-cache feature.
         
-        Implements the following test scenarios:
-        1. Control run: No prompt cache file (baseline with KV cache)
-        2. Cold run (Disk): Prompt cache file created but not used
-        3. Warm run (Disk): Prompt cache file loaded from previous run
+        IMPORTANT: This does NOT measure pure RAM vs Disk caching!
         
-        Note: RAM cache (KV cache) is always enabled in native llama.cpp and
-        cannot be disabled. The "control" run still has KV cache active.
+        Implements the following test scenarios:
+        1. Control run: KV cache only (RAM, always active - no prompt cache file)
+        2. Cold run: KV cache (RAM) + Prompt cache (Disk, creating file)
+        3. Warm run: KV cache (RAM) + Prompt cache (Disk, loading file)
+        
+        What this measures:
+        - Incremental benefit of adding disk-based prompt cache to existing RAM KV cache
+        - NOT the pure effect of RAM caching (no true "no cache" baseline exists)
+        - NOT a comparison of RAM vs Disk (both are active simultaneously in cold/warm runs)
+        
+        Limitation: KV cache (RAM) is always enabled in native llama.cpp and
+        cannot be disabled. The "control" run still has KV cache active, so it's
+        not a true "no cache" baseline.
+        
+        For accurate RAM vs Disk comparison, use llama-server with --cache-ram 0.
         
         Args:
             model_path: Path to GGUF model file
@@ -120,17 +150,35 @@ class AndroidAblationEngine:
         logger.info(f"Prompt prefix length: ~{estimated_tokens} tokens (estimated)")
         logger.info(f"Max tokens: {max_tokens}")
         logger.info("")
-        logger.info("Note: Native llama.cpp always has KV cache enabled (RAM cache)")
-        logger.info("      Control run will have KV cache, not a true 'no cache' baseline")
+        logger.info("IMPORTANT LIMITATION:")
+        logger.info("=" * 80)
+        logger.info("Native llama.cpp ALWAYS has KV cache (RAM) enabled.")
+        logger.info("This test measures the INCREMENTAL benefit of adding disk-based")
+        logger.info("prompt cache ON TOP OF the always-active RAM KV cache.")
+        logger.info("")
+        logger.info("Test scenarios:")
+        logger.info("  Control: KV cache only (RAM, always active)")
+        logger.info("  Cold:    KV cache (RAM) + Prompt cache (Disk, creating)")
+        logger.info("  Warm:    KV cache (RAM) + Prompt cache (Disk, loaded)")
+        logger.info("")
+        logger.info("This does NOT measure:")
+        logger.info("  - Pure RAM cache effect (no true 'no cache' baseline)")
+        logger.info("  - RAM vs Disk comparison (both active simultaneously)")
+        logger.info("")
+        logger.info("For accurate RAM vs Disk comparison, use llama-server with")
+        logger.info("--cache-ram 0 flag instead of llama-cli.")
+        logger.info("=" * 80)
         
         results: List[AblationResult] = []
         
         try:
             # 1. Control run: No prompt cache file (but KV cache is still active)
             logger.info("\n" + "=" * 60)
-            logger.info("Test 1: Control Run (No Prompt Cache File)")
+            logger.info("Test 1: Control Run (KV Cache Only)")
             logger.info("=" * 60)
-            logger.info("Note: KV cache (RAM) is still active - cannot be disabled")
+            logger.info("KV cache (RAM): ACTIVE (cannot be disabled)")
+            logger.info("Prompt cache (Disk): None")
+            logger.info("Note: This is NOT a true 'no cache' baseline!")
             
             control_result = self._run_control_android(
                 model_path=model_path,
@@ -143,8 +191,11 @@ class AndroidAblationEngine:
             
             # 2. Cold run: Create prompt cache file but don't use it
             logger.info("\n" + "=" * 60)
-            logger.info("Test 2: Disk Cache - Cold Run (Create Cache)")
+            logger.info("Test 2: Cold Cache (KV Cache + Creating Disk Cache)")
             logger.info("=" * 60)
+            logger.info("KV cache (RAM): ACTIVE")
+            logger.info("Prompt cache (Disk): Creating cache file")
+            logger.info("Note: Both RAM and Disk caching are active!")
             
             disk_cold_result = self._run_cold_cache_android(
                 model_path=model_path,
@@ -158,8 +209,11 @@ class AndroidAblationEngine:
             
             # 3. Warm run: Load prompt cache file from previous run
             logger.info("\n" + "=" * 60)
-            logger.info("Test 3: Disk Cache - Warm Run (Load Cache)")
+            logger.info("Test 3: Warm Cache (KV Cache + Loading Disk Cache)")
             logger.info("=" * 60)
+            logger.info("KV cache (RAM): ACTIVE")
+            logger.info("Prompt cache (Disk): Loading from cache file")
+            logger.info("Note: Both RAM and Disk caching are active!")
             
             disk_warm_result = self._run_warm_cache_android(
                 model_path=model_path,

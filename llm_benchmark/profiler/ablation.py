@@ -11,6 +11,68 @@ This module provides the AblationEngine class which:
 - Measures cache memory overhead
 - Ensures process isolation by creating fresh model instances
 - Cleans up cache directories after ablation completion
+
+IMPORTANT: Cache Control Strategies
+===================================
+
+The ability to disable RAM prompt caching depends on the backend:
+
+1. **llama-cpp-python Backend (X86, Jetson)**:
+   - Can disable KV cache by setting cache=False
+   - Provides true "no cache" baseline for ablation studies
+   - Recommended for accurate cache effect measurement
+
+2. **Native llama-cli Backend (Android)**:
+   - KV cache is ALWAYS enabled and cannot be disabled via CLI flags
+   - Control runs will have KV cache active (not a true baseline)
+   - This is a limitation of the llama-cli binary
+
+3. **llama-server Backend (Recommended for Android)**:
+   - Supports --cache-ram 0 and --no-cache-prompt flags
+   - Can truly disable prompt caching for accurate measurements
+   - Set cache_prompt=false in API requests
+   - Provides the most control over caching behavior
+
+How to Disable Prompt Caching:
+-------------------------------
+
+**Using llama-server:**
+```bash
+# Start server with caching disabled
+llama-server --model model.gguf --cache-ram 0 --no-cache-prompt
+
+# In API requests, set:
+{
+  "prompt": "...",
+  "cache_prompt": false  # Ensure this is false
+}
+```
+
+**Using llama-cli:**
+```bash
+# Avoid session flags to prevent prompt caching
+# Do NOT use: --prompt-cache or --path_session
+llama-cli --model model.gguf --prompt "..." --n-predict 100
+```
+
+**Using llama-cpp-python:**
+```python
+from llama_cpp import Llama
+llm = Llama(model_path="model.gguf", cache=False)  # Disables KV cache
+```
+
+Limitations:
+-----------
+- llama-cli: Cannot disable KV cache (always active)
+- Some llama-server versions may log "cache enabled" even with flags set (cosmetic bug)
+- For true no-cache baseline on Android, use llama-server instead of llama-cli
+
+References:
+----------
+[1] llama.cpp server documentation
+[2] llama.cpp CLI flags reference
+[3] Community discussions on cache control
+[4] llama-cpp-python API documentation
 """
 
 import gc
@@ -39,7 +101,7 @@ class AblationEngine:
     and automatic cleanup of cache directories.
     """
     
-    def __init__(self, backend: HardwareBackend, metrics_collector: MetricsCollector, context_size: int = 2048):
+    def __init__(self, backend: HardwareBackend, metrics_collector: MetricsCollector, context_size: int = 2048, use_llama_server: bool = False):
         """
         Initialize ablation engine.
         
@@ -47,16 +109,18 @@ class AblationEngine:
             backend: Hardware backend providing platform-specific configuration
             metrics_collector: Metrics collector for inference measurements
             context_size: Context window size for model (default: 2048)
+            use_llama_server: If True, use llama-server for better cache control (default: False)
         """
         self.backend = backend
         self.metrics = metrics_collector
         self.process = psutil.Process()
         self.context_size = context_size
+        self.use_llama_server = use_llama_server
         
         # Temporary directories for cache testing
         self.temp_dirs: List[Path] = []
         
-        logger.info("AblationEngine initialized")
+        logger.info(f"AblationEngine initialized (use_llama_server={use_llama_server})")
     
     def _load_model(self, model_path: str, **kwargs) -> Any:
         """
@@ -235,6 +299,14 @@ class AblationEngine:
         """
         Execute control run without caching (baseline measurement).
         
+        IMPORTANT: For llama-cpp-python, cache=False disables KV cache.
+        For native llama.cpp (Android), KV cache is ALWAYS enabled and cannot be disabled.
+        This is a limitation of the native llama.cpp CLI.
+        
+        To measure true "no cache" baseline with native llama.cpp, you would need to:
+        - Use llama-server with --cache-ram 0 --no-cache-prompt flags
+        - Or modify llama.cpp source code to disable KV cache
+        
         Args:
             model_path: Path to GGUF model file
             prompt: Test prompt
@@ -245,13 +317,26 @@ class AblationEngine:
         """
         logger.info("Running control (no cache) baseline measurement...")
         
+        # Check if using native llama.cpp
+        using_native = hasattr(self.backend, '__class__') and 'Android' in self.backend.__class__.__name__
+        if using_native:
+            logger.warning("=" * 80)
+            logger.warning("LIMITATION: Native llama.cpp ALWAYS has KV cache enabled (RAM)")
+            logger.warning("This 'control' run is NOT a true no-cache baseline!")
+            logger.warning("KV cache cannot be disabled via llama-cli flags.")
+            logger.warning("")
+            logger.warning("To get true no-cache baseline, you would need to:")
+            logger.warning("  1. Use llama-server with --cache-ram 0 --no-cache-prompt")
+            logger.warning("  2. Or modify llama.cpp source to disable KV cache")
+            logger.warning("=" * 80)
+        
         # Measure baseline memory
         baseline_memory_mb = self.process.memory_info().rss / (1024 * 1024)
         
         # Get platform-specific configuration (no cache)
         llama_config = self.backend.get_llama_config()
         
-        # Explicitly disable caching
+        # Explicitly disable caching (only works for llama-cpp-python)
         llama_config["cache"] = False
         
         # Set context size
@@ -284,13 +369,16 @@ class AblationEngine:
         logger.info(f"  TTFT: {metrics.ttft_ms:.2f} ms")
         logger.info(f"  Memory overhead: {memory_overhead_mb:.2f} MB")
         logger.info(f"  Peak memory: {peak_memory_mb:.2f} MB")
+        if using_native:
+            logger.info(f"  Note: KV cache was ACTIVE (cannot be disabled)")
         
         return AblationResult(
-            scenario="control_no_cache",
+            scenario="control_no_cache" if not using_native else "control_kv_cache_only",
             configuration={
-                "cache_enabled": False,
-                "cache_type": None,
-                "cache_state": "N/A"
+                "cache_enabled": False if not using_native else True,
+                "cache_type": None if not using_native else "ram_kv_only",
+                "cache_state": "N/A" if not using_native else "KV cache active (cannot disable)",
+                "true_no_cache_baseline": not using_native
             },
             metrics={
                 "ttft_ms": metrics.ttft_ms,

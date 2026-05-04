@@ -29,6 +29,7 @@ class NativeLlamaCpp:
         llama_cli_path: str = "~/llama.cpp/build/bin/llama-cli",
         prompt_cache: Optional[str] = None,
         prompt_cache_all: bool = False,
+        no_cache_prompt: bool = False,
         **kwargs
     ):
         """
@@ -42,7 +43,15 @@ class NativeLlamaCpp:
             llama_cli_path: Path to llama-cli binary
             prompt_cache: Path to prompt cache file (for --prompt-cache flag)
             prompt_cache_all: Whether to use --prompt-cache-all flag
+            no_cache_prompt: If True, add --no-cache-prompt flag (disables prompt caching)
             **kwargs: Additional arguments (ignored, for compatibility)
+        
+        Note on Cache Control:
+        ----------------------
+        - KV cache (RAM) is ALWAYS enabled in llama-cli and cannot be disabled
+        - prompt_cache controls disk-based prompt caching (--prompt-cache flag)
+        - no_cache_prompt attempts to disable prompt caching (--no-cache-prompt flag)
+        - For true cache control, use llama-server with --cache-ram 0 flag
         """
         self.model_path = Path(model_path).expanduser()
         self.n_ctx = n_ctx
@@ -50,6 +59,7 @@ class NativeLlamaCpp:
         self.n_batch = n_batch
         self.prompt_cache = prompt_cache
         self.prompt_cache_all = prompt_cache_all
+        self.no_cache_prompt = no_cache_prompt
         self.last_subprocess_pid = None  # Track subprocess PID for memory measurement
         self.subprocess_is_running = False  # Track if subprocess is currently active
         self.subprocess_peak_memory_kb = 0  # Track peak memory during subprocess execution
@@ -125,7 +135,12 @@ class NativeLlamaCpp:
         ]
         
         # Add prompt cache flags if specified
-        if self.prompt_cache:
+        if self.no_cache_prompt:
+            # Attempt to disable prompt caching (may not work in all versions)
+            cmd.append("--no-cache-prompt")
+            logger.debug("Using --no-cache-prompt flag (attempting to disable prompt cache)")
+        elif self.prompt_cache:
+            # Enable disk-based prompt caching
             cmd.extend(["--prompt-cache", str(self.prompt_cache)])
             if self.prompt_cache_all:
                 cmd.append("--prompt-cache-all")
