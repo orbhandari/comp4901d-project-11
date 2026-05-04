@@ -43,12 +43,30 @@ class NativeLlamaCpp:
         self.n_ctx = n_ctx
         self.n_threads = n_threads
         self.n_batch = n_batch
-        self.llama_cli_path = Path(llama_cli_path).expanduser()
         
-        # Verify binary exists
-        if not self.llama_cli_path.exists():
+        # Try to find the best binary to use
+        # Priority: llama-cli -> main -> llama-simple
+        llama_cli_path_expanded = Path(llama_cli_path).expanduser()
+        main_path = llama_cli_path_expanded.parent / "main"
+        simple_path = llama_cli_path_expanded.parent / "llama-simple"
+        
+        if llama_cli_path_expanded.exists():
+            self.llama_cli_path = llama_cli_path_expanded
+            self.binary_type = "llama-cli"
+        elif main_path.exists():
+            self.llama_cli_path = main_path
+            self.binary_type = "main"
+            logger.info(f"Using 'main' binary instead of 'llama-cli': {main_path}")
+        elif simple_path.exists():
+            self.llama_cli_path = simple_path
+            self.binary_type = "llama-simple"
+            logger.info(f"Using 'llama-simple' binary: {simple_path}")
+        else:
             raise FileNotFoundError(
-                f"llama-cli not found at {self.llama_cli_path}. "
+                f"No llama.cpp binary found. Tried:\n"
+                f"  - {llama_cli_path_expanded}\n"
+                f"  - {main_path}\n"
+                f"  - {simple_path}\n"
                 "Build llama.cpp first:\n"
                 "  cd ~/llama.cpp\n"
                 "  cmake -B build -DCMAKE_BUILD_TYPE=Release\n"
@@ -59,7 +77,8 @@ class NativeLlamaCpp:
         if not self.model_path.exists():
             raise FileNotFoundError(f"Model not found: {self.model_path}")
         
-        logger.info(f"Initialized NativeLlamaCpp with model: {self.model_path}")
+        logger.info(f"Initialized NativeLlamaCpp with binary: {self.llama_cli_path} (type: {self.binary_type})")
+        logger.info(f"Model: {self.model_path}")
         logger.info(f"Configuration: n_ctx={n_ctx}, n_threads={n_threads}, n_batch={n_batch}")
     
     def __call__(
@@ -81,7 +100,8 @@ class NativeLlamaCpp:
         Yields:
             Dictionary with 'choices' containing generated text chunks
         """
-        # Build command - use simple one-shot generation
+        # Build command based on binary type
+        # The 'main' binary (older llama.cpp) is more reliable for non-interactive use
         cmd = [
             str(self.llama_cli_path),
             "-m", str(self.model_path),
@@ -90,43 +110,67 @@ class NativeLlamaCpp:
             "-b", str(self.n_batch),
             "-n", str(max_tokens),
             "-p", prompt,
-            "--log-disable",  # Disable logging to stderr
-            "-ngl", "0",  # Disable GPU offloading
         ]
+        
+        # Add binary-specific flags
+        if self.binary_type == "llama-cli":
+            # llama-cli specific flags
+            cmd.extend([
+                "--log-disable",  # Disable logging
+                "-ngl", "0",  # Disable GPU
+                "--no-cnv",  # Try to disable conversation mode
+            ])
+        elif self.binary_type == "main":
+            # main binary (older) - usually doesn't have conversation mode
+            cmd.extend([
+                "--log-disable",  # Disable logging
+                "-ngl", "0",  # Disable GPU
+            ])
         
         logger.debug(f"Running: {' '.join(cmd)}")
         
-        # Run llama-cli and wait for completion
+        # Run binary with stdin pipe to send EOF
         try:
             start_time = time.time()
             
-            # Use communicate() to get all output at once (simpler and more reliable)
+            # Use PIPE for stdin so we can close it (send EOF)
             process = subprocess.Popen(
                 cmd,
-                stdin=subprocess.DEVNULL,
+                stdin=subprocess.PIPE,  # Use PIPE to send EOF
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
             
+            # Immediately close stdin to send EOF signal
+            # This should prevent interactive mode
+            process.stdin.close()
+            
             # Wait for completion with timeout
             try:
                 stdout, stderr = process.communicate(timeout=300)  # 5 minute timeout
             except subprocess.TimeoutExpired:
+                logger.error("Binary timed out - killing process")
+                logger.error("This usually means the binary entered interactive/conversation mode")
+                logger.error("Try running the diagnostic script: bash diagnose_llama_cli.sh")
                 process.kill()
                 stdout, stderr = process.communicate()
-                raise TimeoutError("llama-cli timed out after 300 seconds")
+                raise TimeoutError(
+                    f"{self.binary_type} timed out after 300 seconds. "
+                    "It may have entered interactive mode. "
+                    "Run 'bash diagnose_llama_cli.sh' to check available flags."
+                )
             
             if process.returncode != 0:
-                logger.error(f"llama-cli failed with return code {process.returncode}")
+                logger.error(f"{self.binary_type} failed with return code {process.returncode}")
                 logger.error(f"stderr: {stderr}")
-                raise RuntimeError(f"llama-cli failed: {stderr}")
+                raise RuntimeError(f"{self.binary_type} failed: {stderr}")
             
             # Clean the output - remove prompt markers and extra whitespace
             output = stdout.strip()
             
             # Remove common prompt markers that might appear
-            for marker in ['>', '>>>', 'prompt:', 'Prompt:', '> ']:
+            for marker in ['>', '>>>', '> ', 'prompt:', 'Prompt:']:
                 output = output.replace(marker, '')
             
             # Remove the original prompt if it was echoed
@@ -135,17 +179,20 @@ class NativeLlamaCpp:
             
             output = output.strip()
             
+            # Remove any remaining whitespace-only lines
+            lines = [line for line in output.split('\n') if line.strip()]
+            output = '\n'.join(lines)
+            
+            if not output:
+                logger.warning("No output generated - this might indicate an issue")
+                logger.warning(f"stdout was: {repr(stdout[:200])}")
+                logger.warning(f"stderr was: {repr(stderr[:200])}")
+            
             logger.debug(f"Generated output: {output[:100]}..." if len(output) > 100 else f"Generated output: {output}")
             
             # Simulate streaming by yielding character by character
             # This maintains compatibility with the profiler's TTFT measurement
-            first_token_time = time.time()
-            
             for i, char in enumerate(output):
-                # Yield first character immediately to capture TTFT
-                if i == 0:
-                    first_token_time = time.time()
-                
                 yield {
                     'choices': [{
                         'text': char,
