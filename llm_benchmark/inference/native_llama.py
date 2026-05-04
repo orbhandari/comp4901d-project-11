@@ -101,8 +101,9 @@ class NativeLlamaCpp:
             Dictionary with 'choices' containing generated text chunks
         """
         # Build command based on binary type
-        # The 'main' binary (older llama.cpp) is more reliable for non-interactive use
-        cmd = [
+        # Keep it simple - only use flags that are universally supported
+        # Wrap with timeout command to force kill if it hangs
+        base_cmd = [
             str(self.llama_cli_path),
             "-m", str(self.model_path),
             "-c", str(self.n_ctx),
@@ -112,20 +113,24 @@ class NativeLlamaCpp:
             "-p", prompt,
         ]
         
-        # Add binary-specific flags
+        # Add binary-specific flags (only well-supported ones)
         if self.binary_type == "llama-cli":
-            # llama-cli specific flags
-            cmd.extend([
+            # llama-cli specific flags - only use widely supported ones
+            base_cmd.extend([
                 "--log-disable",  # Disable logging
-                "-ngl", "0",  # Disable GPU
-                "--no-cnv",  # Try to disable conversation mode
+                "-ngl", "0",  # Disable GPU (already warned, but needed)
             ])
         elif self.binary_type == "main":
             # main binary (older) - usually doesn't have conversation mode
-            cmd.extend([
+            base_cmd.extend([
                 "--log-disable",  # Disable logging
                 "-ngl", "0",  # Disable GPU
             ])
+        
+        # Wrap with timeout command (60 seconds should be enough for 50 tokens)
+        # This will kill the process if it hangs in conversation mode
+        timeout_seconds = max(60, max_tokens * 2)  # 2 seconds per token, minimum 60s
+        cmd = ["timeout", f"{timeout_seconds}s"] + base_cmd
         
         logger.debug(f"Running: {' '.join(cmd)}")
         
@@ -145,17 +150,30 @@ class NativeLlamaCpp:
             
             # Wait for completion with timeout
             try:
-                stdout, stderr = process.communicate(timeout=300)  # 5 minute timeout
+                stdout, stderr = process.communicate(timeout=timeout_seconds + 10)  # Extra 10s buffer
             except subprocess.TimeoutExpired:
-                logger.error("Binary timed out - killing process")
+                logger.error(f"Binary timed out after {timeout_seconds + 10} seconds")
                 logger.error("This usually means the binary entered interactive/conversation mode")
-                logger.error("Try running the diagnostic script: bash diagnose_llama_cli.sh")
+                logger.error("The 'timeout' command should have killed it, but communicate() also timed out")
                 process.kill()
                 stdout, stderr = process.communicate()
                 raise TimeoutError(
-                    f"{self.binary_type} timed out after 300 seconds. "
-                    "It may have entered interactive mode. "
-                    "Run 'bash diagnose_llama_cli.sh' to check available flags."
+                    f"{self.binary_type} timed out. "
+                    "It likely entered conversation mode. "
+                    "Try checking for alternative binaries with: ls ~/llama.cpp/build/bin/"
+                )
+            
+            # Check if timeout command killed the process (exit code 124)
+            if process.returncode == 124:
+                logger.error(f"Process was killed by timeout command after {timeout_seconds}s")
+                logger.error("This means llama-cli entered conversation mode and didn't exit")
+                logger.error(f"stdout: {stdout[:500]}")
+                logger.error(f"stderr: {stderr[:500]}")
+                raise TimeoutError(
+                    f"{self.binary_type} was killed by timeout after {timeout_seconds}s. "
+                    "It entered conversation mode (infinite > loop). "
+                    "Your llama-cli version may not support non-interactive mode. "
+                    "Check for 'main' binary: ls ~/llama.cpp/build/bin/main"
                 )
             
             if process.returncode != 0:
