@@ -6,7 +6,9 @@ This bypasses the llama-cpp-python "unsupported platform" issue on Android.
 """
 
 import logging
+import select
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Iterator, Optional, Dict, Any
@@ -101,26 +103,72 @@ class NativeLlamaCpp:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=0  # Unbuffered
+                bufsize=1  # Line buffered
             )
             
             # Collect all output
             full_output = []
+            token_count = 0
+            last_output_time = time.time()
+            timeout_seconds = 300  # 5 minute timeout
             
-            # Read output line by line (more reliable than char-by-char)
-            for line in iter(process.stdout.readline, ''):
-                if not line:
+            # Use non-blocking I/O on Unix-like systems
+            if sys.platform != 'win32':
+                import fcntl
+                import os
+                
+                # Set stdout to non-blocking
+                fd = process.stdout.fileno()
+                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            
+            # Read output with timeout protection
+            while True:
+                # Check if process has finished
+                if process.poll() is not None:
+                    # Process finished, read any remaining output
+                    remaining = process.stdout.read()
+                    if remaining:
+                        full_output.append(remaining)
+                        for char in remaining:
+                            yield {
+                                'choices': [{
+                                    'text': char,
+                                    'finish_reason': None
+                                }]
+                            }
                     break
                 
-                full_output.append(line)
+                # Check for timeout
+                if time.time() - last_output_time > timeout_seconds:
+                    logger.error(f"Timeout: No output for {timeout_seconds} seconds")
+                    process.kill()
+                    raise TimeoutError(f"llama-cli timed out after {timeout_seconds} seconds")
                 
-                # Yield in llama-cpp-python compatible format
-                yield {
-                    'choices': [{
-                        'text': line,
-                        'finish_reason': None
-                    }]
-                }
+                try:
+                    # Try to read a character
+                    char = process.stdout.read(1)
+                    
+                    if char:
+                        full_output.append(char)
+                        token_count += 1
+                        last_output_time = time.time()
+                        
+                        # Yield in llama-cpp-python compatible format
+                        yield {
+                            'choices': [{
+                                'text': char,
+                                'finish_reason': None
+                            }]
+                        }
+                    else:
+                        # No data available, sleep briefly
+                        time.sleep(0.01)
+                        
+                except (IOError, OSError):
+                    # No data available (non-blocking read)
+                    time.sleep(0.01)
+                    continue
             
             # Wait for completion
             return_code = process.wait()
@@ -139,10 +187,16 @@ class NativeLlamaCpp:
                 }]
             }
             
-            logger.debug(f"Generated {len(full_output)} characters")
+            logger.debug(f"Generated {token_count} tokens")
             
         except Exception as e:
             logger.error(f"Native llama.cpp execution failed: {e}")
+            # Make sure to kill the process if it's still running
+            try:
+                if process.poll() is None:
+                    process.kill()
+            except:
+                pass
             raise
     
     def tokenize(self, text: bytes) -> list:
