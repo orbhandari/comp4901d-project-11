@@ -13,12 +13,14 @@ This module provides the QuantizationProfiler class which:
 
 import gc
 import logging
+import statistics
 import time
 from typing import Dict, List, Any
 
 import psutil
 
 from llm_benchmark.hardware.hal import HardwareBackend
+from llm_benchmark.inference.native_llama import NativeLlamaCpp
 from llm_benchmark.metrics.collector import MetricsCollector
 from llm_benchmark.models import QuantizationResult
 
@@ -46,6 +48,63 @@ class QuantizationProfiler:
         self.process = psutil.Process()
         
         logger.info("QuantizationProfiler initialized")
+    
+    def _is_android_platform(self, llm: Any) -> bool:
+        """
+        Detect if the model instance is using Android native llama.cpp.
+        
+        Args:
+            llm: Model instance to check
+        
+        Returns:
+            True if using NativeLlamaCpp (Android), False otherwise
+        """
+        return isinstance(llm, NativeLlamaCpp)
+    
+    def _get_total_memory_mb(self) -> float:
+        """
+        Get total memory including subprocesses (for Android).
+        
+        For Android with NativeLlamaCpp, the native llama-cli runs as a subprocess
+        and its memory must be included in the total. For other platforms using
+        llama-cpp-python, the model runs in-process so only the parent process
+        memory is needed.
+        
+        Returns:
+            Total memory in MB (parent process + all child processes)
+        """
+        total_rss = self.process.memory_info().rss
+        
+        # Add subprocess memory (for Android native llama.cpp)
+        for child in self.process.children(recursive=True):
+            try:
+                total_rss += child.memory_info().rss
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                # Child process may have terminated or we don't have permission
+                pass
+        
+        return total_rss / (1024 * 1024)
+    
+    def _is_outlier(self, value: float, values: List[float], threshold: float = 10.0) -> bool:
+        """
+        Detect if a value is an outlier (>threshold * median).
+        
+        Args:
+            value: Value to check
+            values: List of all values for comparison
+            threshold: Multiplier for median to determine outlier (default: 10.0)
+        
+        Returns:
+            True if value is an outlier, False otherwise
+        """
+        if len(values) < 2:
+            return False
+        
+        median = statistics.median(values)
+        if median == 0:
+            return False
+        
+        return value > threshold * median
     
     def profile_quantization(
         self,
@@ -77,7 +136,7 @@ class QuantizationProfiler:
         logger.info(f"Model path: {model_path}")
         
         # Measure baseline memory before model load
-        baseline_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        baseline_memory_mb = self._get_total_memory_mb()
         logger.info(f"Baseline memory: {baseline_memory_mb:.2f} MB")
         
         # Get platform-specific configuration
@@ -92,6 +151,8 @@ class QuantizationProfiler:
         logger.info(f"Model config: {llama_config}")
         
         # Time model loading using backend's load_model_safe()
+        # For non-Android: model loads during this call
+        # For Android: only path validation happens here
         load_start = time.perf_counter()
         
         try:
@@ -103,27 +164,51 @@ class QuantizationProfiler:
             raise
         
         load_end = time.perf_counter()
-        load_time_s = load_end - load_start
         
-        logger.info(f"Model loaded in {load_time_s:.2f} seconds")
+        # Detect platform to determine load time measurement strategy
+        is_android = self._is_android_platform(llm)
+        
+        if is_android:
+            # For Android with NativeLlamaCpp, model loads during first inference
+            logger.info("Android platform detected - measuring load time during first inference")
+            
+            # Measure load time during warmup inference (first inference call)
+            load_start = time.perf_counter()
+            try:
+                _ = llm(prompt, max_tokens=warmup_tokens, stream=False)
+            except Exception as e:
+                logger.warning(f"Warmup inference failed: {e}")
+                # Continue anyway - warmup failure shouldn't stop profiling
+            load_end = time.perf_counter()
+            load_time_s = load_end - load_start
+            
+            logger.info(f"Model loaded in {load_time_s:.2f} seconds (measured during first inference)")
+        else:
+            # For non-Android platforms, model loads during load_model_safe()
+            load_time_s = load_end - load_start
+            logger.info(f"Model loaded in {load_time_s:.2f} seconds")
         
         # Measure memory after model load
-        post_load_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        post_load_memory_mb = self._get_total_memory_mb()
         ram_increase_mb = post_load_memory_mb - baseline_memory_mb
         
         logger.info(f"Memory after load: {post_load_memory_mb:.2f} MB")
         logger.info(f"RAM increase: {ram_increase_mb:.2f} MB")
         
         # Perform warmup inference (5 tokens) before measurement
-        logger.info(f"Performing warmup inference ({warmup_tokens} tokens)...")
-        try:
-            _ = llm(prompt, max_tokens=warmup_tokens, stream=False)
-        except Exception as e:
-            logger.warning(f"Warmup inference failed: {e}")
-            # Continue anyway - warmup failure shouldn't stop profiling
+        # For Android, we already did warmup during load time measurement
+        if not is_android:
+            logger.info(f"Performing warmup inference ({warmup_tokens} tokens)...")
+            try:
+                _ = llm(prompt, max_tokens=warmup_tokens, stream=False)
+            except Exception as e:
+                logger.warning(f"Warmup inference failed: {e}")
+                # Continue anyway - warmup failure shouldn't stop profiling
+        else:
+            logger.info(f"Warmup already performed during load time measurement")
         
         # Measure memory after warmup
-        post_warmup_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        post_warmup_memory_mb = self._get_total_memory_mb()
         logger.info(f"Memory after warmup: {post_warmup_memory_mb:.2f} MB")
         
         # Initialize peak memory tracker
@@ -155,7 +240,7 @@ class QuantizationProfiler:
                     first_token_time = current_time
                 
                 # Sample memory during inference (this captures peak during full context allocation)
-                current_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+                current_memory_mb = self._get_total_memory_mb()
                 peak_ram_mb = max(peak_ram_mb, current_memory_mb)
                 
                 output_tokens += 1
@@ -212,7 +297,7 @@ class QuantizationProfiler:
             raise
         
         # Final memory check
-        final_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        final_memory_mb = self._get_total_memory_mb()
         peak_ram_mb = max(peak_ram_mb, final_memory_mb)
         
         logger.info(f"Final memory: {final_memory_mb:.2f} MB")
@@ -307,12 +392,24 @@ class QuantizationProfiler:
                 gc.collect()
                 
                 # Log memory after GC
-                post_gc_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+                post_gc_memory_mb = self._get_total_memory_mb()
                 logger.info(f"Memory after GC: {post_gc_memory_mb:.2f} MB")
         
         logger.info(f"\n{'='*60}")
         logger.info(f"Quantization profiling complete")
         logger.info(f"{'='*60}")
+        
+        # Check for decode TPS outliers
+        decode_tps_values = [result.decode_tps for result in results]
+        for result in results:
+            if self._is_outlier(result.decode_tps, decode_tps_values, threshold=10.0):
+                median_tps = statistics.median(decode_tps_values)
+                logger.warning(
+                    f"Outlier detected in {result.quantization}: "
+                    f"decode_tps = {result.decode_tps:.2f} t/s "
+                    f"(median: {median_tps:.2f} t/s, "
+                    f"ratio: {result.decode_tps / median_tps:.1f}x)"
+                )
         
         # Generate comparison matrix
         self._log_comparison_matrix(results)

@@ -1,0 +1,121 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration tests
+  - **Property 1: Bug Condition** - Android Metrics Measurement Errors
+  - **CRITICAL**: These tests MUST FAIL on unfixed code - failure confirms the bugs exist
+  - **DO NOT attempt to fix the tests or the code when they fail**
+  - **NOTE**: These tests encode the expected behavior - they will validate the fixes when they pass after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the three measurement bugs exist
+  - **Scoped PBT Approach**: Scope properties to concrete failing cases (Android platform with NativeLlamaCpp)
+  - Test 1.1: Load time measurement - assert load_time_s > 0.5 for Android (Bug Condition: load time measured around path validation instead of actual model loading)
+  - Test 1.2: RAM measurement - assert peak_ram_mb > 300 for Android (Bug Condition: RAM measurement excludes subprocess memory)
+  - Test 1.3: Decode TPS consistency - assert all decode_tps values within 2x of median (Bug Condition: first iteration shows 20x outlier)
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests FAIL (this is correct - it proves the bugs exist)
+  - Document counterexamples found:
+    - Load time = 0.00s instead of 1-5s
+    - Peak RAM = 176 MB instead of 400-800 MB
+    - First iteration decode TPS = 45778.25 t/s instead of ~2200 t/s
+  - Mark task complete when tests are written, run, and failures are documented
+  - _Requirements: 1.1, 1.2, 1.3, 1.4_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Non-Android Platform Behavior
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for non-Android platforms (X86Backend, JetsonBackend with llama-cpp-python)
+  - Write property-based tests capturing observed behavior patterns from Preservation Requirements:
+    - Test 2.1: Load time measurement around `backend.load_model_safe()` works for non-Android platforms
+    - Test 2.2: RAM measurement using `self.process.memory_info().rss` works for non-Android platforms
+    - Test 2.3: Warmup inference executes on all platforms
+    - Test 2.4: Memory tracking during token generation captures peak memory on all platforms
+    - Test 2.5: TTFT, prefill TPS, and other metrics calculate correctly on all platforms
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+
+- [x] 3. Fix Android metrics measurement issues
+
+  - [x] 3.1 Add platform detection and helper methods
+    - Import NativeLlamaCpp class in quantization.py
+    - Add `_is_android_platform(llm)` helper method using `isinstance(llm, NativeLlamaCpp)`
+    - Add `_get_total_memory_mb()` helper method to track subprocess memory using `psutil.Process().children(recursive=True)`
+    - Add `_is_outlier(value, values, threshold=10.0)` helper method for outlier detection
+    - _Bug_Condition: isBugCondition(input) where isinstance(backend, AndroidBackend) AND isinstance(model_instance, NativeLlamaCpp)_
+    - _Expected_Behavior: Platform detection enables Android-specific measurement logic_
+    - _Preservation: Non-Android platforms unaffected by new helper methods_
+    - _Requirements: 2.1, 2.2, 2.3_
+
+  - [x] 3.2 Fix load time measurement for Android
+    - Modify `profile_quantization()` to detect Android platform after model loading
+    - For Android: measure load time during first inference call (warmup) instead of around `load_model_safe()`
+    - For non-Android: continue measuring load time around `load_model_safe()` as before
+    - Implementation approach:
+      - Move load time measurement logic after `backend.load_model_safe()` call
+      - Check if `isinstance(llm, NativeLlamaCpp)`
+      - If Android: measure time around warmup inference (first `llm()` call)
+      - If non-Android: use existing load_start/load_end timing
+    - _Bug_Condition: isBugCondition(input) where load time measured around path validation in NativeLlamaCpp.__init__()_
+    - _Expected_Behavior: expectedBehavior(result) where result.load_time_s is 1-5 seconds for Android TinyLlama models_
+    - _Preservation: Non-Android platforms continue to measure load time around backend.load_model_safe()_
+    - _Requirements: 1.1, 2.1, 3.1_
+
+  - [x] 3.3 Fix RAM measurement to include subprocess memory
+    - Replace all `self.process.memory_info().rss` calls with `_get_total_memory_mb()` helper
+    - Update baseline memory measurement
+    - Update post-load memory measurement
+    - Update post-warmup memory measurement
+    - Update memory sampling during token generation
+    - Update final memory check
+    - _Bug_Condition: isBugCondition(input) where RAM measurement excludes native llama-cli subprocess memory_
+    - _Expected_Behavior: expectedBehavior(result) where result.peak_ram_mb is 400-600 MB for Q2_K and 600-800 MB for Q4_0 on Android_
+    - _Preservation: Non-Android platforms continue to measure RAM correctly (subprocess memory tracking is no-op when no subprocesses exist)_
+    - _Requirements: 1.2, 2.2, 3.2, 3.4_
+
+  - [x] 3.4 Fix decode TPS outlier detection
+    - Add outlier detection to `profile_all()` method
+    - After collecting all results, check each result's decode_tps using `_is_outlier()` helper
+    - Log warnings for detected outliers (decode_tps > 10x median)
+    - Consider adding outlier filtering to statistical summaries (optional enhancement)
+    - Implementation approach:
+      - Collect all decode_tps values from results list
+      - For each result, check if `_is_outlier(result.decode_tps, decode_tps_values, threshold=10.0)`
+      - Log warning with actual value and median for comparison
+    - _Bug_Condition: isBugCondition(input) where first iteration shows impossibly high decode TPS (45778.25 t/s)_
+    - _Expected_Behavior: expectedBehavior(result) where all decode_tps values are consistent (~2200 t/s) without 20x outliers_
+    - _Preservation: Non-Android platforms unaffected (outlier detection only logs warnings, doesn't change measurements)_
+    - _Requirements: 1.3, 1.4, 2.3, 2.4_
+
+  - [x] 3.5 Verify bug condition exploration tests now pass
+    - **Property 1: Expected Behavior** - Android Metrics Measurement Corrected
+    - **IMPORTANT**: Re-run the SAME tests from task 1 - do NOT write new tests
+    - The tests from task 1 encode the expected behavior
+    - When these tests pass, it confirms the expected behavior is satisfied
+    - Run bug condition exploration tests from step 1
+    - **EXPECTED OUTCOME**: Tests PASS (confirms bugs are fixed)
+    - Verify load time > 0.5s for Android
+    - Verify peak RAM > 300 MB for Android
+    - Verify decode TPS values within 2x of median (no 20x outliers)
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [x] 3.6 Verify preservation tests still pass
+    - **Property 2: Preservation** - Non-Android Platform Behavior Unchanged
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all tests still pass after fix (no regressions on non-Android platforms)
+    - Verify load time measurement works for X86Backend and JetsonBackend
+    - Verify RAM measurement works for non-Android platforms
+    - Verify warmup, memory tracking, and other metrics unchanged
+
+- [x] 4. Checkpoint - Ensure all tests pass
+  - Run full test suite including bug condition and preservation tests
+  - Verify all tests pass
+  - Run full quantization profiling on Android with Q2_K and Q4_0 models
+  - Verify metrics are reasonable:
+    - Load time: 1-5 seconds
+    - Peak RAM: 400-600 MB for Q2_K, 600-800 MB for Q4_0
+    - Decode TPS: ~2200 t/s without outliers
+    - Statistical summaries have non-negative confidence intervals
+  - Ask the user if questions arise
