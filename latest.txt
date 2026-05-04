@@ -1,56 +1,38 @@
-~/.../benchmark_results/run_20260504_224604 $ cat results.md
-# Benchmark Run Report: 20260504_224604
+Benchmark Run Report: 20260504_235342
 
-*Timestamp:* 2026-05-04T22:46:06.054487
-*Duration:* 41.75 seconds
+*Timestamp:* 2026-05-04T23:53:43.614468                       *Duration:* 43.80 seconds
 
-## Hardware Information
-
-- *Platform:* android
-- *CPU:* Unknown CPU (8 cores)
+## Hardware Information                                         
+- *Platform:* android                                         - *CPU:* Unknown CPU (8 cores)
 - *CPU Features:*
-- *RAM:* 11.17 GB total, 3.45 GB available
-- *GPU:* Not available
+- *RAM:* 11.17 GB total, 2.77 GB available                    - *GPU:* Not available
 - *Thermal Sensors:* Not available
 - *Power Sensors:* Not available
 
 ## Software Versions
+                                                                - *python:* 3.13.13
 
-- *python:* 3.13.13
-
-## Configuration
-
+## Configuration                                                
 json
 {
   "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
   "models": {
-    "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf",
-    "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf"
+    "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf",                   "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf"
   },
-  "model_cache_dir": "~/storage/shared/models",
-  "context_size": 512,
+  "model_cache_dir": "~/storage/shared/models",                   "context_size": 512,
   "batch_size": 256,
-  "max_tokens": 50,
-  "iterations": 3,
+  "max_tokens": 50,                                               "iterations": 3,
   "warmup_runs": 1,
-  "enable_quantization_profiling": true,
-  "enable_ablation_studies": false,
+  "enable_quantization_profiling": true,                          "enable_ablation_studies": false,
   "enable_batch_testing": false,
-  "enable_thermal_monitoring": true,
-  "kv_cache_types": [
+  "enable_thermal_monitoring": true,                              "kv_cache_types": [
     "ram",
-    "disk"
-  ],
-  "prompt_cache_prefix_lengths": [
-    100,
-    500,
-    1000
-  ],
-  "batch_sizes": [
-    1,
+    "disk"                                                        ],
+  "prompt_cache_prefix_lengths": [                                  100,
+    500,                                                            1000                                                          ],
+  "batch_sizes": [                                                  1,
     2,
-    4,
-    8,
+    4,                                                              8,
     16
   ],
   "sleep_between_tests_s": 15,
@@ -72,33 +54,24 @@ json
 - *Q2_K:* 030a469a63576d59f601ef5608846b7718eaa884dd820e9aa7493efec1788afa
 - *Q4_0:* da3087fb14aede55fde6eb81a0e55e886810e43509ec82ecdc7aa5d62a03b556
 
-## Quantization Results
-
-| Quantization | Load Time (s) | Peak RAM (MB) | TTFT (ms) | Prefill TPS | Decode TPS | Tokens (in/out) |
-|--------------|---------------|---------------|-----------|-------------|------------|-----------------|
-| Q2_K | 0.00 | 176.52 | 1361.77 | 18.36 | 45778.25 | 25/135 |
-| Q4_0 | 0.00 | 176.54 | 871.73 | 28.68 | 2369.22 | 25/135 |
-| Q2_K | 0.00 | 176.54 | 1293.82 | 19.32 | 2243.80 | 25/135 |
-| Q4_0 | 0.00 | 176.54 | 860.63 | 29.05 | 2240.93 | 25/135 |
-| Q2_K | 0.00 | 176.54 | 1296.22 | 19.29 | 2175.12 | 25/135 |
-| Q4_0 | 0.00 | 176.54 | 866.31 | 28.86 | 2234.64 | 25/135 |
-
-## Statistical Summaries
-
-| Metric | Mean | Std Dev | 95% CI | Outliers |
-|--------|------|---------|--------|----------|
-| ttft_ms | 1317.27 | 38.56 | [1273.64, 1360.90] | None |
-| prefill_tps | 18.99 | 0.55 | [18.37, 19.61] | None |
-| decode_tps | 16732.39 | 25154.48 | [-11732.58, 45197.36] | None |
+## Quantization Results                                         
+| Quantization | Load Time (s) | Peak RAM (MB) | TTFT (ms) | Prefill TPS | Decode TPS | Tokens (in/out) |                       |--------------|---------------|---------------|-----------|-------------|------------|-----------------|
+| Q2_K | 0.00 | 653.80 | 1506.09 | 16.60 | 533.12 | 25/135 |    | Q4_0 | 0.00 | 1307.80 | 1390.91 | 17.97 | 585.10 | 25/135 |
+| Q2_K | 0.00 | 669.43 | 1365.48 | 18.31 | 550.57 | 25/135 |
+| Q4_0 | 0.00 | 1304.41 | 1034.67 | 24.16 | 467.11 | 25/135 |   | Q2_K | 0.00 | 637.46 | 1375.39 | 18.18 | 546.18 | 25/135 |
+| Q4_0 | 0.00 | 1304.55 | 1060.90 | 23.57 | 545.31 | 25/135 |
+                                                                ## Statistical Summaries
+                                                                | Metric | Mean | Std Dev | 95% CI | Outliers |
+|--------|------|---------|--------|----------|                 | ttft_ms | 1415.65 | 78.48 | [1326.85, 1504.46] | None |       | prefill_tps | 17.70 | 0.95 | [16.62, 18.77] | None |
+| decode_tps | 543.29 | 9.08 | [533.02, 553.56] | None |        | load_time_s | 0.00 | 0.00 | [0.00, 0.00] | None |
+| peak_ram_mb | 653.56 | 15.99 | [635.47, 671.65] | None |
+| ram_increase_mb | -767.03 | 664.26 | [-1518.71, -15.34] | None |
+| ttft_ms | 1162.16 | 198.54 | [937.49, 1386.83] | None |
+| prefill_tps | 21.90 | 3.42 | [18.03, 25.77] | None |
+| decode_tps | 532.51 | 60.03 | [464.58, 600.43] | None |
 | load_time_s | 0.00 | 0.00 | [0.00, 0.00] | None |
-| peak_ram_mb | 176.53 | 0.01 | [176.52, 176.55] | None |
-| ram_increase_mb | 0.00 | 0.00 | [0.00, 0.00] | None |
-| ttft_ms | 866.22 | 5.55 | [859.94, 872.50] | None |
-| prefill_tps | 28.86 | 0.19 | [28.65, 29.07] | None |
-| decode_tps | 2281.60 | 75.95 | [2195.65, 2367.54] | None |
-| load_time_s | 0.00 | 0.00 | [0.00, 0.00] | None |
-| peak_ram_mb | 176.54 | 0.00 | [176.54, 176.54] | None |
-| ram_increase_mb | 0.00 | 0.00 | [0.00, 0.00] | None |
+| peak_ram_mb | 1305.59 | 1.92 | [1303.42, 1307.76] | None |
+| ram_increase_mb | -492.98 | 16.55 | [-511.70, -474.25] | None |
 
 ## Visualizations
 

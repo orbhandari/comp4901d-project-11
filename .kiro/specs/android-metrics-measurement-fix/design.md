@@ -2,12 +2,12 @@
 
 ## Overview
 
-This bugfix addresses three systematic measurement errors in the Android benchmark when using native llama.cpp subprocess-based inference. The issues stem from the fundamental architectural difference between Android (subprocess-based) and other platforms (in-process): (1) load time is measured around path validation in `__init__()` rather than actual model loading during first inference, (2) RAM measurement only captures the Python process while excluding the native llama.cpp subprocess, and (3) decode throughput shows a 20x outlier on the first iteration due to timing measurement issues. The fix strategy involves: measuring load time during first inference for Android, tracking subprocess memory using psutil's children() API, and either improving timing precision or adding outlier detection for decode TPS.
+This bugfix addresses four systematic measurement errors in the Android benchmark when using native llama.cpp subprocess-based inference. The issues stem from the fundamental architectural difference between Android (subprocess-based) and other platforms (in-process): (1) load time is measured around path validation in `__init__()` rather than actual model loading during first inference, (2) RAM measurement only captures the Python process while excluding the native llama.cpp subprocess, (3) decode throughput shows a 20x outlier on the first iteration due to timing measurement issues, and (4) RAM increase calculation produces negative values (-767.03 MB for Q2_K, -492.98 MB for Q4_0) because the subprocess memory tracking fix is applied inconsistently between baseline and peak measurements. The fix strategy involves: measuring load time during first inference for Android, tracking subprocess memory using psutil's children() API consistently for both baseline and peak measurements, and either improving timing precision or adding outlier detection for decode TPS.
 
 ## Glossary
 
 - **Bug_Condition (C)**: The condition that triggers measurement errors - when using NativeLlamaCpp (Android) instead of llama-cpp-python (other platforms)
-- **Property (P)**: The desired behavior - accurate load time (1-5s), complete RAM measurement (400-800 MB), and consistent decode TPS (~2200 t/s)
+- **Property (P)**: The desired behavior - accurate load time (1-5s), complete RAM measurement (400-800 MB), consistent decode TPS (~2200 t/s), and positive RAM increase (~450-1100 MB)
 - **Preservation**: Existing measurement behavior for llama-cpp-python platforms that must remain unchanged
 - **NativeLlamaCpp**: The Android-specific wrapper in `llm_benchmark/inference/native_llama.py` that uses subprocess to call native llama-cli binary
 - **QuantizationProfiler**: The profiler in `llm_benchmark/profiler/quantization.py` that measures load time, RAM, and inference metrics
@@ -15,6 +15,9 @@ This bugfix addresses three systematic measurement errors in the Android benchma
 - **load_model_safe()**: The backend method that loads models - for Android, it instantiates NativeLlamaCpp which only validates paths in `__init__()`
 - **profile_quantization()**: The profiler method that measures metrics around model loading and inference
 - **Subprocess Memory**: The memory used by the native llama-cli process that runs separately from the Python process
+- **Baseline RAM**: Memory measurement taken BEFORE model loading (Python process only, ~200 MB)
+- **Peak RAM**: Memory measurement taken DURING inference (Python + subprocess, ~650-1305 MB)
+- **RAM Increase**: Calculated as (Peak RAM - Baseline RAM), should always be positive for Android
 
 ## Bug Details
 
@@ -50,6 +53,11 @@ END FUNCTION
 - **Buggy Input**: Android platform with NativeLlamaCpp, first Q2_K iteration
 - **Current Behavior**: Decode TPS = 45778.25 t/s (impossibly high outlier)
 - **Expected Behavior**: Decode TPS = ~2200 t/s (consistent with subsequent runs)
+
+**Issue 4: Negative RAM Increase**
+- **Buggy Input**: Android platform with NativeLlamaCpp, calculating RAM increase (Peak RAM - Baseline RAM)
+- **Current Behavior**: RAM increase = -767.03 MB for Q2_K, -492.98 MB for Q4_0 (negative values)
+- **Expected Behavior**: RAM increase = ~450 MB for Q2_K, ~1100 MB for Q4_0 (positive values representing actual memory increase from model loading)
 
 **Edge Case: Non-Android Platforms**
 - **Input**: X86Backend or JetsonBackend with llama-cpp-python
@@ -155,6 +163,33 @@ The first-iteration outlier (45778.25 t/s) propagates into statistical summaries
 
 This is a consequence of Issue 3 - fixing the outlier will fix the statistical summaries.
 
+### Issue 5: Negative RAM Increase Values
+
+**Root Cause**: Inconsistent application of subprocess memory tracking between baseline and peak measurements
+
+The RAM increase calculation produces negative values:
+- Q2_K: ram_increase_mb = -767.03 MB (mean)
+- Q4_0: ram_increase_mb = -492.98 MB (mean)
+
+RAM increase should measure (Peak RAM during inference - Baseline RAM before loading), which should always be positive. The negative values indicate that the subprocess memory tracking fix (`_get_total_memory_mb()`) is being applied inconsistently:
+
+**Possible Scenarios:**
+1. **Baseline measured AFTER subprocess exists**: If baseline RAM is measured after the subprocess has already started, it includes subprocess memory (~650 MB for Q2_K), inflating the baseline. Then peak RAM is measured correctly (~653 MB), resulting in a small or negative increase.
+
+2. **Peak measured BEFORE subprocess exists**: If peak RAM is measured before the subprocess starts or after it terminates, it only captures Python process memory (~200 MB), deflating the peak. Then baseline is measured correctly (~200 MB), resulting in a small or negative increase.
+
+3. **Measurement timing reversed**: The baseline and peak measurements may be swapped or measured at the wrong points in the profiling lifecycle.
+
+**Expected Behavior:**
+- **Baseline RAM**: Python process only (~200 MB) - measured BEFORE model loading
+- **Peak RAM**: Python + subprocess (~650 MB for Q2_K, ~1305 MB for Q4_0) - measured DURING inference
+- **RAM Increase**: Should be POSITIVE (~450 MB for Q2_K, ~1100 MB for Q4_0)
+
+**Solution Approach**: Ensure `_get_total_memory_mb()` is called consistently at the correct measurement points:
+- Baseline: Measure BEFORE calling `backend.load_model_safe()` or first inference
+- Peak: Measure DURING inference when subprocess is active
+- Verify subprocess exists during peak measurement using `self.process.children()`
+
 ## Correctness Properties
 
 Property 1: Bug Condition - Accurate Load Time Measurement
@@ -175,19 +210,25 @@ _For any_ inference on Android with NativeLlamaCpp, the fixed profiler SHALL pro
 
 **Validates: Requirements 2.3, 2.4**
 
-Property 4: Preservation - Non-Android Load Time Measurement
+Property 4: Bug Condition - Positive RAM Increase
+
+_For any_ inference on Android with NativeLlamaCpp, the fixed profiler SHALL calculate RAM increase as (Peak RAM - Baseline RAM) producing positive values representing the actual memory increase from model loading, with values around 450 MB for Q2_K and 1100 MB for Q4_0 instead of negative values.
+
+**Validates: Requirements 2.5**
+
+Property 5: Preservation - Non-Android Load Time Measurement
 
 _For any_ model loading on non-Android platforms (X86Backend, JetsonBackend) using llama-cpp-python, the fixed profiler SHALL continue to measure load time around `backend.load_model_safe()` exactly as before, preserving existing behavior.
 
 **Validates: Requirements 3.1**
 
-Property 5: Preservation - Non-Android RAM Measurement
+Property 6: Preservation - Non-Android RAM Measurement
 
 _For any_ inference on non-Android platforms using llama-cpp-python, the fixed profiler SHALL continue to measure peak RAM using `self.process.memory_info().rss` exactly as before, preserving existing behavior.
 
 **Validates: Requirements 3.2**
 
-Property 6: Preservation - Warmup and Other Metrics
+Property 7: Preservation - Warmup and Other Metrics
 
 _For any_ inference on any platform, the fixed profiler SHALL continue to perform warmup inference, track memory during token generation, and calculate TTFT, prefill TPS, and other metrics using the existing methodology, preserving all existing behavior.
 
@@ -279,7 +320,31 @@ Assuming our root cause analysis is correct, we need to modify `QuantizationProf
        # ... rest of timing logic
    ```
 
-#### 5. **Refactor Measurement Logic**: Extract platform-specific measurement into helper methods
+#### 5. **Fix RAM Increase Calculation**: Ensure consistent measurement timing for baseline and peak RAM
+   ```python
+   # Measure baseline RAM BEFORE model loading/first inference
+   baseline_ram_mb = self._get_total_memory_mb()
+   
+   # Load model or perform first inference (for Android)
+   if is_android:
+       # First inference loads the model and starts subprocess
+       _ = llm(prompt, max_tokens=warmup_tokens, stream=False)
+   else:
+       llm = self.backend.load_model_safe(model_path, **llama_config)
+   
+   # Measure peak RAM DURING inference when subprocess is active
+   # Track memory during token generation
+   peak_ram_mb = max(self._get_total_memory_mb(), baseline_ram_mb)
+   
+   # Calculate RAM increase (should always be positive)
+   ram_increase_mb = peak_ram_mb - baseline_ram_mb
+   
+   # Validate: RAM increase should be positive for Android
+   if is_android and ram_increase_mb < 0:
+       logger.warning(f"Negative RAM increase detected: {ram_increase_mb} MB")
+   ```
+
+#### 6. **Refactor Measurement Logic**: Extract platform-specific measurement into helper methods
    ```python
    def _measure_load_time(self, llm, model_path, llama_config, prompt, warmup_tokens):
        """Measure load time (platform-specific)."""
@@ -300,6 +365,8 @@ Assuming our root cause analysis is correct, we need to modify `QuantizationProf
 2. Add platform detection using `isinstance(llm, NativeLlamaCpp)`
 3. Modify load time measurement to measure during first inference for Android
 4. Update all memory sampling calls to use `_get_total_memory_mb()`
+5. Ensure baseline RAM is measured BEFORE model loading/first inference
+6. Ensure peak RAM is measured DURING inference when subprocess is active
 
 **Phase 2: Fix Decode TPS Outlier**
 1. Implement outlier detection helper method `_is_outlier()`
@@ -307,7 +374,13 @@ Assuming our root cause analysis is correct, we need to modify `QuantizationProf
 3. Log warnings for detected outliers
 4. Consider adding outlier filtering to statistical summaries
 
-**Phase 3: Testing and Validation**
+**Phase 3: Fix RAM Increase Calculation**
+1. Verify baseline RAM measurement occurs before model loading
+2. Verify peak RAM measurement occurs during inference
+3. Add validation to detect negative RAM increase values
+4. Log warnings if negative values are detected
+
+**Phase 4: Testing and Validation**
 1. Write exploration tests to confirm bugs on unfixed code
 2. Apply fixes and verify with fix checking tests
 3. Write preservation tests to ensure non-Android platforms unchanged
@@ -330,17 +403,20 @@ The testing strategy follows a two-phase approach: first, surface counterexample
 2. **RAM Measurement Test**: Profile a model on Android and assert peak RAM > 300 MB (will fail on unfixed code, showing ~176 MB)
 3. **Decode TPS Consistency Test**: Profile a model multiple times and assert all decode TPS values are within 2x of median (will fail on unfixed code, showing 20x outlier)
 4. **Subprocess Memory Test**: Check that subprocess memory is included in RAM measurement (will fail on unfixed code)
+5. **RAM Increase Test**: Profile a model on Android and assert RAM increase > 0 MB (will fail on unfixed code, showing negative values like -767.03 MB)
 
 **Expected Counterexamples**:
 - Load time = 0.00s instead of 1-5s
 - Peak RAM = 176 MB instead of 400-800 MB
 - First iteration decode TPS = 45778.25 t/s instead of ~2200 t/s
 - Subprocess memory not included in total RAM
+- RAM increase = -767.03 MB (Q2_K) or -492.98 MB (Q4_0) instead of positive values
 
 **Possible causes**: 
 - Load time measured around path validation instead of actual loading
 - RAM measurement only captures Python process, not subprocess
 - Timing measurement issue or subprocess startup overhead in first iteration
+- Baseline and peak RAM measurements inconsistent (subprocess tracking applied at wrong times)
 
 ### Fix Checking
 
@@ -353,6 +429,7 @@ FOR ALL input WHERE isBugCondition(input) DO
   ASSERT result.load_time_s > 0.5  # Actual load time measured
   ASSERT result.peak_ram_mb > 300  # Subprocess memory included
   ASSERT result.decode_tps < 10000  # No impossible outliers
+  ASSERT result.ram_increase_mb > 0  # RAM increase is positive
 END FOR
 ```
 
@@ -361,6 +438,7 @@ END FOR
 2. **RAM Fix**: Profile Q2_K and Q4_0 models on Android, assert peak RAM is 400-600 MB and 600-800 MB respectively
 3. **Decode TPS Fix**: Profile models multiple times, assert all decode TPS values are within 2x of median
 4. **Statistical Summary Fix**: Verify that confidence intervals have non-negative lower bounds
+5. **RAM Increase Fix**: Profile Q2_K and Q4_0 models on Android, assert RAM increase is positive (~450 MB for Q2_K, ~1100 MB for Q4_0)
 
 ### Preservation Checking
 

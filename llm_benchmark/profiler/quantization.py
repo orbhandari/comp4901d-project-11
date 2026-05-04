@@ -246,9 +246,12 @@ class QuantizationProfiler:
             logger.info("Android platform detected - measuring load time during first inference")
             
             # Measure load time during warmup inference (first inference call)
+            # IMPORTANT: Must consume the generator to actually run the subprocess
             load_start = time.perf_counter()
             try:
-                _ = llm(prompt, max_tokens=warmup_tokens, stream=False)
+                # Consume the generator to trigger subprocess execution
+                for _ in llm(prompt, max_tokens=warmup_tokens, stream=True):
+                    pass  # Just consume, don't need the output
             except Exception as e:
                 logger.warning(f"Warmup inference failed: {e}")
                 # Continue anyway - warmup failure shouldn't stop profiling
@@ -263,17 +266,17 @@ class QuantizationProfiler:
         
         # Measure memory after model load
         post_load_memory_mb = self._get_total_memory_mb()
-        ram_increase_mb = post_load_memory_mb - baseline_memory_mb
         
         logger.info(f"Memory after load: {post_load_memory_mb:.2f} MB")
-        logger.info(f"RAM increase: {ram_increase_mb:.2f} MB")
         
         # Perform warmup inference (5 tokens) before measurement
         # For Android, we already did warmup during load time measurement
         if not is_android:
             logger.info(f"Performing warmup inference ({warmup_tokens} tokens)...")
             try:
-                _ = llm(prompt, max_tokens=warmup_tokens, stream=False)
+                # Consume the generator to actually run inference
+                for _ in llm(prompt, max_tokens=warmup_tokens, stream=True):
+                    pass  # Just consume, don't need the output
             except Exception as e:
                 logger.warning(f"Warmup inference failed: {e}")
                 # Continue anyway - warmup failure shouldn't stop profiling
@@ -375,6 +378,18 @@ class QuantizationProfiler:
         
         logger.info(f"Final memory: {final_memory_mb:.2f} MB")
         logger.info(f"Peak memory: {peak_ram_mb:.2f} MB")
+        
+        # Calculate RAM increase using peak RAM (includes subprocess memory for Android)
+        # This ensures we capture the actual memory increase from model loading
+        ram_increase_mb = peak_ram_mb - baseline_memory_mb
+        logger.info(f"RAM increase: {ram_increase_mb:.2f} MB")
+        
+        # Validate: RAM increase should be positive for Android
+        if is_android and ram_increase_mb < 0:
+            logger.warning(
+                f"Negative RAM increase detected: {ram_increase_mb:.2f} MB. "
+                f"This may indicate a measurement timing issue."
+            )
         
         # Create quantization result
         result = QuantizationResult(

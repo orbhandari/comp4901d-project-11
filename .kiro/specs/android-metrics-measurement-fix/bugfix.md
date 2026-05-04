@@ -16,6 +16,8 @@ The Android benchmark produces three categories of incorrect metrics when using 
 
 1.4 WHEN calculating statistical summaries for decode TPS THEN the system produces huge standard deviation (25154.48) and negative lower confidence interval bound (-11732.58) due to the first-iteration outlier
 
+1.5 WHEN calculating RAM increase (Peak RAM - Baseline RAM) THEN the system produces negative values (-767.03 MB for Q2_K, -492.98 MB for Q4_0) because the subprocess memory tracking fix is applied inconsistently between baseline and peak measurements
+
 ### Expected Behavior (Correct)
 
 2.1 WHEN profiling quantization on Android with native llama.cpp THEN the system SHALL measure the actual model load time during the first inference call when the subprocess loads the model, producing load times of 1-5 seconds for TinyLlama models
@@ -25,6 +27,8 @@ The Android benchmark produces three categories of incorrect metrics when using 
 2.3 WHEN profiling quantization on Android with native llama.cpp THEN the system SHALL produce consistent decode TPS measurements across all iterations without 20x outliers, with values around 2200 t/s for typical Android hardware
 
 2.4 WHEN calculating statistical summaries for decode TPS THEN the system SHALL produce reasonable standard deviations and confidence intervals with non-negative lower bounds
+
+2.5 WHEN calculating RAM increase (Peak RAM - Baseline RAM) THEN the system SHALL produce positive values representing the actual memory increase from model loading, with values around 450 MB for Q2_K and 1100 MB for Q4_0
 
 ### Unchanged Behavior (Regression Prevention)
 
