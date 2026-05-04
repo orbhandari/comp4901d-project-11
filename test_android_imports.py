@@ -45,6 +45,14 @@ try:
     from llm_benchmark.orchestrator.orchestrator import TestOrchestrator
     print("   ✅ TestOrchestrator imported successfully")
     
+    print("\n8. Testing results persistence...")
+    from llm_benchmark.results.persistence import ResultsPersistence
+    print("   ✅ ResultsPersistence imported successfully")
+    
+    print("\n9. Testing visualization...")
+    from llm_benchmark.visualization.visualization_generator import VisualizationGenerator
+    print("   ✅ VisualizationGenerator imported successfully")
+    
     print("\n" + "=" * 70)
     print("✅ ALL IMPORTS SUCCESSFUL!")
     print("=" * 70)
