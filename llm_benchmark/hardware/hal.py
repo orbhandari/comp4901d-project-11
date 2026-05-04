@@ -766,6 +766,10 @@ class AndroidBackend(HardwareBackend):
                     llama_cli_path=str(llama_cli)
                 )
                 logger.info(f"Successfully loaded model: {model_path}")
+                
+                # Store model instance for memory measurement (Android workaround)
+                self._last_loaded_model = llm
+                
                 return llm
                 
             except Exception as e:

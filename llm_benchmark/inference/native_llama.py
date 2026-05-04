@@ -44,6 +44,7 @@ class NativeLlamaCpp:
         self.n_ctx = n_ctx
         self.n_threads = n_threads
         self.n_batch = n_batch
+        self.last_subprocess_pid = None  # Track subprocess PID for memory measurement
         
         # Try to find the best binary to use
         # Priority: main -> llama-simple -> llama-cli
@@ -135,6 +136,10 @@ class NativeLlamaCpp:
                 text=True,
                 start_new_session=True  # Create new process group
             )
+            
+            # Store subprocess PID for memory measurement
+            self.last_subprocess_pid = process.pid
+            logger.debug(f"Subprocess PID: {self.last_subprocess_pid}")
             
             # Wait for completion with timeout
             try:

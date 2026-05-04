@@ -76,14 +76,80 @@ class QuantizationProfiler:
         total_rss = self.process.memory_info().rss
         
         # Add subprocess memory (for Android native llama.cpp)
-        for child in self.process.children(recursive=True):
+        try:
+            for child in self.process.children(recursive=True):
+                try:
+                    total_rss += child.memory_info().rss
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    # Child process may have terminated or we don't have permission
+                    pass
+        except (psutil.AccessDenied, PermissionError):
+            # On Android/Termux, psutil.children() fails due to /proc/stat restrictions
+            # Use 'ps' command as fallback - it doesn't require root and works reliably
+            logger.debug("psutil.children() failed due to permission restrictions. Using 'ps' command fallback...")
+            
+            # Try to get subprocess memory using ps command
             try:
-                total_rss += child.memory_info().rss
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                # Child process may have terminated or we don't have permission
-                pass
+                # Check if we have a NativeLlamaCpp instance with a subprocess PID
+                if hasattr(self.backend, '_last_loaded_model'):
+                    llm = self.backend._last_loaded_model
+                    if hasattr(llm, 'last_subprocess_pid') and llm.last_subprocess_pid:
+                        subprocess_memory = self._read_memory_from_ps(llm.last_subprocess_pid)
+                        if subprocess_memory > 0:
+                            total_rss += subprocess_memory
+                            logger.debug(f"Added subprocess memory: {subprocess_memory / (1024 * 1024):.2f} MB (PID: {llm.last_subprocess_pid})")
+                        else:
+                            logger.debug(f"Subprocess PID {llm.last_subprocess_pid} not found in ps output")
+            except Exception as e:
+                logger.debug(f"ps command fallback failed: {e}")
+            
+            # Log warning only if we couldn't get subprocess memory
+            if total_rss == self.process.memory_info().rss:
+                logger.warning(
+                    "Unable to measure subprocess memory. "
+                    "Memory measurement will be incomplete for subprocess-based inference."
+                )
         
         return total_rss / (1024 * 1024)
+    
+    def _read_memory_from_ps(self, pid: int) -> int:
+        """
+        Read memory usage using the 'ps' command.
+        
+        This is a reliable fallback for Android/Termux where psutil.children() fails
+        due to /proc/stat permission restrictions. The 'ps' command doesn't require
+        root access and works on all Unix-like systems.
+        
+        Args:
+            pid: Process ID to read memory for
+        
+        Returns:
+            RSS memory in bytes, or 0 if unable to read
+        """
+        try:
+            import subprocess
+            
+            # Use ps to get RSS in KB for the specific PID
+            # Format: ps -o rss= -p <pid>
+            # The '=' removes the header, giving us just the value
+            result = subprocess.run(
+                ['ps', '-o', 'rss=', '-p', str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=1
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # RSS is in KB, convert to bytes
+                rss_kb = int(result.stdout.strip())
+                return rss_kb * 1024
+            else:
+                logger.debug(f"ps command returned no data for PID {pid} (process may have terminated)")
+                
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError, FileNotFoundError) as e:
+            logger.debug(f"Failed to read memory using ps command for PID {pid}: {e}")
+        
+        return 0
     
     def _is_outlier(self, value: float, values: List[float], threshold: float = 10.0) -> bool:
         """
