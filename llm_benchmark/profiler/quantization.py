@@ -14,10 +14,9 @@ This module provides the QuantizationProfiler class which:
 import gc
 import logging
 import time
-from typing import Dict, List
+from typing import Dict, List, Any
 
 import psutil
-from llama_cpp import Llama
 
 from llm_benchmark.hardware.hal import HardwareBackend
 from llm_benchmark.metrics.collector import MetricsCollector
@@ -90,13 +89,15 @@ class QuantizationProfiler:
         # Disable verbose output
         llama_config["verbose"] = False
         
-        logger.info(f"Llama config: {llama_config}")
+        logger.info(f"Model config: {llama_config}")
         
-        # Time model loading
+        # Time model loading using backend's load_model_safe()
         load_start = time.perf_counter()
         
         try:
-            llm = Llama(model_path=model_path, **llama_config)
+            llm = self.backend.load_model_safe(model_path, **llama_config)
+            if llm is None:
+                raise RuntimeError(f"Failed to load model: {model_path}")
         except Exception as e:
             logger.error(f"Failed to load model {model_path}: {e}")
             raise

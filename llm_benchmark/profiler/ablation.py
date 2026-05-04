@@ -20,10 +20,9 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 import psutil
-from llama_cpp import Llama
 
 from llm_benchmark.hardware.hal import HardwareBackend
 from llm_benchmark.metrics.collector import MetricsCollector
@@ -58,6 +57,27 @@ class AblationEngine:
         self.temp_dirs: List[Path] = []
         
         logger.info("AblationEngine initialized")
+    
+    def _load_model(self, model_path: str, **kwargs) -> Any:
+        """
+        Load model using backend's load_model_safe() method.
+        
+        This ensures compatibility with both llama-cpp-python and native llama.cpp.
+        
+        Args:
+            model_path: Path to GGUF model file
+            **kwargs: Additional arguments for model loading
+        
+        Returns:
+            Loaded model instance
+        
+        Raises:
+            RuntimeError: If model loading fails
+        """
+        llm = self.backend.load_model_safe(model_path, **kwargs)
+        if llm is None:
+            raise RuntimeError(f"Failed to load model: {model_path}")
+        return llm
     
     def test_kv_cache_strategies(
         self,
@@ -240,10 +260,10 @@ class AblationEngine:
         # Disable verbose output
         llama_config["verbose"] = False
         
-        logger.info(f"Llama config: {llama_config}")
+        logger.info(f"Model config: {llama_config}")
         
         # Load model
-        llm = Llama(model_path=model_path, **llama_config)
+        llm = self._load_model(model_path, **llama_config)
         
         # Measure memory after load
         post_load_memory_mb = self.process.memory_info().rss / (1024 * 1024)
@@ -330,10 +350,10 @@ class AblationEngine:
         # Disable verbose output
         llama_config["verbose"] = False
         
-        logger.info(f"Llama config: {llama_config}")
+        logger.info(f"Model config: {llama_config}")
         
         # Load model with fresh cache
-        llm = Llama(model_path=model_path, **llama_config)
+        llm = self._load_model(model_path, **llama_config)
         
         # Measure memory after load
         post_load_memory_mb = self.process.memory_info().rss / (1024 * 1024)
@@ -428,10 +448,10 @@ class AblationEngine:
         # Disable verbose output
         llama_config["verbose"] = False
         
-        logger.info(f"Llama config: {llama_config}")
+        logger.info(f"Model config: {llama_config}")
         
         # Load model
-        llm = Llama(model_path=model_path, **llama_config)
+        llm = self._load_model(model_path, **llama_config)
         
         # Measure memory after load
         post_load_memory_mb = self.process.memory_info().rss / (1024 * 1024)
@@ -769,10 +789,10 @@ class AblationEngine:
             # Disable verbose output
             llama_config["verbose"] = False
             
-            logger.info(f"Llama config: {llama_config}")
+            logger.info(f"Model config: {llama_config}")
             
             # Load model
-            llm = Llama(model_path=model_path, **llama_config)
+            llm = self._load_model(model_path, **llama_config)
             
             # Measure memory after load
             post_load_memory_mb = self.process.memory_info().rss / (1024 * 1024)
@@ -951,10 +971,10 @@ class AblationEngine:
         # Disable verbose output
         llama_config["verbose"] = False
         
-        logger.info(f"Llama config: {llama_config}")
+        logger.info(f"Model config: {llama_config}")
         
         # Load model
-        llm = Llama(model_path=model_path, **llama_config)
+        llm = self._load_model(model_path, **llama_config)
         
         # Measure memory after load
         post_load_memory_mb = self.process.memory_info().rss / (1024 * 1024)
@@ -1291,11 +1311,11 @@ class AblationEngine:
             # Disable verbose output
             llama_config["verbose"] = False
             
-            logger.info(f"Llama config: {llama_config}")
+            logger.info(f"Model config: {llama_config}")
             
             # Load model once for all batch tests
             logger.info("Loading model...")
-            llm = Llama(model_path=model_path, **llama_config)
+            llm = self._load_model(model_path, **llama_config)
             
             post_load_memory_mb = self.process.memory_info().rss / (1024 * 1024)
             model_memory_mb = post_load_memory_mb - baseline_memory_mb
