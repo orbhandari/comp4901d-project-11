@@ -75,6 +75,7 @@ class ResultsPersistence:
 
         # Create subdirectories
         try:
+            (run_dir / "visualizations").mkdir(exist_ok=True)
             (run_dir / "logs").mkdir(exist_ok=True)
             (run_dir / "checkpoints").mkdir(exist_ok=True)
         except OSError as e:

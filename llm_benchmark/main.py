@@ -416,7 +416,8 @@ def generate_visualizations(
     ablation_results: List[AblationResult],
     batch_results: List[AblationResult],
     statistical_summaries: List,
-    config: BenchmarkConfig
+    config: BenchmarkConfig,
+    run_dir: Path
 ) -> List[str]:
     """
     Generate visualizations from results.
@@ -427,6 +428,7 @@ def generate_visualizations(
         batch_results: Batch processing results
         statistical_summaries: Statistical summaries with confidence intervals
         config: Benchmark configuration
+        run_dir: Path to the run directory where visualizations should be saved
     
     Returns:
         List of paths to generated visualization files
@@ -440,7 +442,7 @@ def generate_visualizations(
     
     try:
         viz_gen = VisualizationGenerator(
-            output_dir=config.output_dir,
+            output_dir=str(run_dir),
             dpi=config.visualization_dpi
         )
         
@@ -472,7 +474,8 @@ def generate_visualizations(
 
 def generate_reports(
     benchmark_run: BenchmarkRun,
-    config: BenchmarkConfig
+    config: BenchmarkConfig,
+    run_dir: Path
 ) -> None:
     """
     Generate reports in all specified formats.
@@ -480,9 +483,9 @@ def generate_reports(
     Args:
         benchmark_run: Complete benchmark run results
         config: Benchmark configuration
+        run_dir: Path to the run directory (already created)
     
     Raises:
-        OSError: If run directory creation fails
         Exception: If all format saves fail
     
     **Validates: Requirements 8.6, 8.7, 9.8**
@@ -492,13 +495,11 @@ def generate_reports(
     logger.info("Generating Reports")
     logger.info("=" * 80)
     
-    # Create run directory (let errors propagate)
+    # Use existing run directory
     persistence = ResultsPersistence(output_dir=config.output_dir)
     logger.debug(f"Output directory (expanded): {persistence.output_dir}")
     logger.debug(f"Output directory exists: {persistence.output_dir.exists()}")
-    logger.debug(f"Output directory is writable: {os.access(persistence.output_dir.parent, os.W_OK)}")
-    run_dir = persistence.create_run_directory(benchmark_run.run_id)
-    logger.info(f"✓ Run directory: {run_dir}")
+    logger.debug(f"Run directory: {run_dir}")
     
     # Track save results
     save_results = {"succeeded": [], "failed": []}
@@ -705,9 +706,19 @@ def main():
             config=config
         )
         
-        # Step 9: Generate visualizations
+        # Step 9: Create run ID and directory
         logger.info("\n" + "=" * 80)
-        logger.info("Step 9: Generating Visualizations")
+        logger.info("Step 9: Creating Run Directory")
+        logger.info("=" * 80)
+        
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        persistence = ResultsPersistence(output_dir=config.output_dir)
+        run_dir = persistence.create_run_directory(run_id)
+        logger.info(f"✓ Run directory: {run_dir}")
+        
+        # Step 10: Generate visualizations
+        logger.info("\n" + "=" * 80)
+        logger.info("Step 10: Generating Visualizations")
         logger.info("=" * 80)
         
         visualization_paths = generate_visualizations(
@@ -715,15 +726,14 @@ def main():
             ablation_results=ablation_results,
             batch_results=batch_results,
             statistical_summaries=statistical_summaries,
-            config=config
+            config=config,
+            run_dir=run_dir
         )
         
-        # Step 10: Create benchmark run object
+        # Step 11: Create benchmark run object
         logger.info("\n" + "=" * 80)
-        logger.info("Step 10: Creating Benchmark Run Object")
+        logger.info("Step 11: Creating Benchmark Run Object")
         logger.info("=" * 80)
-        
-        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Get software versions
         software_versions = {}
@@ -774,12 +784,12 @@ def main():
         
         logger.info("✓ Benchmark run object created")
         
-        # Step 11: Generate reports
+        # Step 12: Generate reports
         logger.info("\n" + "=" * 80)
-        logger.info("Step 11: Generating Reports")
+        logger.info("Step 12: Generating Reports")
         logger.info("=" * 80)
         
-        generate_reports(benchmark_run, config)
+        generate_reports(benchmark_run, config, run_dir)
         
         # Final summary
         logger.info("\n" + "=" * 80)
