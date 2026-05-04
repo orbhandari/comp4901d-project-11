@@ -1,0 +1,133 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** - Path Expansion and Error Propagation Failures
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate the bug exists
+  - **Scoped PBT Approach**: Test concrete failing cases: unexpanded tilde paths, permission errors, missing directories
+  - Test that `generate_reports()` with `output_dir = "~/test_benchmark_results"` fails to create directory at expanded path
+  - Test that `generate_reports()` with permission-denied paths fails silently without propagating errors
+  - Test that `ResultsPersistence.__init__()` with tilde paths creates literal `~` directory instead of expanding
+  - Test that individual format save failures are not tracked or reported clearly
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found:
+    - Directory creation attempts literal `~/test_benchmark_results` instead of expanded path
+    - Errors are caught and logged but not propagated to caller
+    - No clear indication of which formats succeeded or failed
+    - Generic error messages without specific paths or remediation guidance
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.2, 1.3, 1.4_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Successful Report Generation with Absolute Paths
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for non-buggy inputs (absolute paths, no filesystem errors)
+  - Observe: `generate_reports()` with `output_dir = "/tmp/benchmark_results"` creates directory and saves all formats successfully
+  - Observe: `generate_reports()` with `output_dir = "./benchmark_results"` creates directory and saves all formats successfully
+  - Observe: All format saves (JSON, CSV, Markdown, HTML) work correctly when no errors occur
+  - Observe: Directory structure (visualizations/, logs/, checkpoints/) is created correctly
+  - Write property-based tests capturing observed behavior patterns:
+    - For all absolute paths without tildes, directory creation succeeds
+    - For all relative paths, directory creation succeeds
+    - For all requested formats, files are saved when no errors occur
+    - For all runs, subdirectories are created correctly
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4_
+
+- [x] 3. Fix for benchmark results not saved on Android
+
+  - [x] 3.1 Add path expansion to ResultsPersistence.__init__()
+    - Open `llm_benchmark/results/persistence.py`
+    - Locate `ResultsPersistence.__init__()` method (around line 32)
+    - Change `self.output_dir = Path(output_dir)` to `self.output_dir = Path(output_dir).expanduser()`
+    - This ensures paths like `~/storage/shared/benchmark_results` are expanded to absolute paths before any directory operations
+    - _Bug_Condition: isBugCondition(input) where input.config.output_dir contains '~' and is not expanded_
+    - _Expected_Behavior: Path is expanded using .expanduser() before creating Path object, ensuring absolute paths are used for all directory operations_
+    - _Preservation: Absolute paths and relative paths without tildes continue to work exactly as before (expanduser() is a no-op for already-expanded paths)_
+    - _Requirements: 1.4, 2.2, 2.4_
+
+  - [x] 3.2 Improve error messages in create_run_directory()
+    - Open `llm_benchmark/results/persistence.py`
+    - Locate `create_run_directory()` method (around line 41)
+    - Wrap `run_dir.mkdir(parents=True, exist_ok=True)` in try-except OSError block
+    - Raise OSError with message: `f"Failed to create run directory '{run_dir}': {e.strerror}. Check that the path is valid and you have write permissions."`
+    - Wrap subdirectory creation in try-except OSError block
+    - Raise OSError with message: `f"Failed to create subdirectories in '{run_dir}': {e.strerror}"`
+    - Add `Raises: OSError: If directory creation fails` to docstring
+    - _Bug_Condition: isBugCondition(input) where directoryCreationFails(input.config.output_dir)_
+    - _Expected_Behavior: Errors are propagated with specific, actionable error messages that include the failing path and suggested remediation_
+    - _Preservation: Successful directory creation continues to work exactly as before_
+    - _Requirements: 1.2, 2.1, 2.2_
+
+  - [x] 3.3 Refactor generate_reports() to track individual format failures
+    - Open `llm_benchmark/main.py`
+    - Locate `generate_reports()` function (around line 480)
+    - Remove the top-level try-except block that wraps all report generation logic
+    - Move `persistence = ResultsPersistence(output_dir=config.output_dir)` and `run_dir = persistence.create_run_directory(benchmark_run.run_id)` outside any try-except (let errors propagate)
+    - Create `save_results = {"succeeded": [], "failed": []}` dictionary to track results
+    - Wrap each individual format save (JSON, CSV, Markdown, HTML) in its own try-except block
+    - On success, append `(format_type, str(path))` to `save_results["succeeded"]`
+    - On failure, log error with `logger.error(f"✗ {format_type.upper()} report save failed: {e}")` and append `(format_type, str(e))` to `save_results["failed"]`
+    - After all formats, check if `save_results["failed"]` is non-empty
+    - If failures exist, log warning with failed format names
+    - If ALL formats failed (no succeeded), raise Exception with all error details
+    - If some succeeded, log success message
+    - Add `Raises: OSError: If run directory creation fails; Exception: If all format saves fail` to docstring
+    - _Bug_Condition: isBugCondition(input) where exceptionIsCaughtSilently() and individual format failures are not tracked_
+    - _Expected_Behavior: Individual format failures are tracked, logged with specific error messages, and reported collectively; errors are propagated when all formats fail_
+    - _Preservation: Successful report generation with all formats continues to work exactly as before_
+    - _Requirements: 1.1, 1.3, 2.1, 2.3_
+
+  - [x] 3.4 Add validation logging for debugging
+    - Open `llm_benchmark/main.py`
+    - In `generate_reports()`, after creating `persistence` object, add debug logging:
+      - `logger.debug(f"Output directory (expanded): {persistence.output_dir}")`
+      - `logger.debug(f"Output directory exists: {persistence.output_dir.exists()}")`
+      - `logger.debug(f"Output directory is writable: {os.access(persistence.output_dir.parent, os.W_OK)}")`
+    - Import `os` at top of file if not already imported
+    - _Expected_Behavior: Debug logging helps diagnose path expansion and permission issues_
+    - _Preservation: No impact on existing functionality (debug logging only)_
+    - _Requirements: 2.2, 2.4_
+
+  - [x] 3.5 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Path Expansion and Error Propagation Work Correctly
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - Verify that:
+      - Tilde paths are expanded to absolute paths before directory creation
+      - Errors are propagated with specific, actionable error messages
+      - Individual format failures are tracked and reported
+      - Error messages include failing paths and remediation guidance
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [x] 3.6 Verify preservation tests still pass
+    - **Property 2: Preservation** - Successful Report Generation Unchanged
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all tests still pass after fix:
+      - Absolute paths continue to work correctly
+      - Relative paths continue to work correctly
+      - All format saves work when no errors occur
+      - Directory structure is created correctly
+      - No regressions in existing functionality
+
+- [x] 4. Checkpoint - Ensure all tests pass
+  - Run all tests (bug condition exploration + preservation)
+  - Verify all tests pass
+  - If any tests fail, investigate and fix issues
+  - Ask the user if questions arise
+  - Confirm that:
+    - Bug condition test passes (bug is fixed)
+    - Preservation tests pass (no regressions)
+    - Manual testing on Android shows results are saved correctly
+    - Error messages are clear and actionable

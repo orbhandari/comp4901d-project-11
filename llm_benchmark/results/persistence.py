@@ -36,7 +36,7 @@ class ResultsPersistence:
         Args:
             output_dir: Base directory for storing results
         """
-        self.output_dir = Path(output_dir)
+        self.output_dir = Path(output_dir).expanduser()
 
     def create_run_directory(self, run_id: str) -> Path:
         """
@@ -59,14 +59,29 @@ class ResultsPersistence:
 
         Returns:
             Path to the run directory
+
+        Raises:
+            OSError: If directory creation fails
         """
         run_dir = self.output_dir / f"run_{run_id}"
-        run_dir.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            run_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise OSError(
+                f"Failed to create run directory '{run_dir}': {e.strerror}. "
+                f"Check that the path is valid and you have write permissions."
+            ) from e
 
         # Create subdirectories
-        (run_dir / "visualizations").mkdir(exist_ok=True)
-        (run_dir / "logs").mkdir(exist_ok=True)
-        (run_dir / "checkpoints").mkdir(exist_ok=True)
+        try:
+            (run_dir / "visualizations").mkdir(exist_ok=True)
+            (run_dir / "logs").mkdir(exist_ok=True)
+            (run_dir / "checkpoints").mkdir(exist_ok=True)
+        except OSError as e:
+            raise OSError(
+                f"Failed to create subdirectories in '{run_dir}': {e.strerror}"
+            ) from e
 
         return run_dir
 

@@ -481,6 +481,10 @@ def generate_reports(
         benchmark_run: Complete benchmark run results
         config: Benchmark configuration
     
+    Raises:
+        OSError: If run directory creation fails
+        Exception: If all format saves fail
+    
     **Validates: Requirements 8.6, 8.7, 9.8**
     """
     logger = get_logger(__name__)
@@ -488,46 +492,80 @@ def generate_reports(
     logger.info("Generating Reports")
     logger.info("=" * 80)
     
-    try:
-        persistence = ResultsPersistence(output_dir=config.output_dir)
-        
-        # Create run directory
-        run_dir = persistence.create_run_directory(benchmark_run.run_id)
-        logger.info(f"✓ Run directory: {run_dir}")
-        
-        # Save in all requested formats
-        for format_type in config.save_formats:
-            if format_type == "json":
+    # Create run directory (let errors propagate)
+    persistence = ResultsPersistence(output_dir=config.output_dir)
+    logger.debug(f"Output directory (expanded): {persistence.output_dir}")
+    logger.debug(f"Output directory exists: {persistence.output_dir.exists()}")
+    logger.debug(f"Output directory is writable: {os.access(persistence.output_dir.parent, os.W_OK)}")
+    run_dir = persistence.create_run_directory(benchmark_run.run_id)
+    logger.info(f"✓ Run directory: {run_dir}")
+    
+    # Track save results
+    save_results = {"succeeded": [], "failed": []}
+    
+    # Save in all requested formats
+    for format_type in config.save_formats:
+        if format_type == "json":
+            try:
                 json_path = run_dir / "results.json"
                 persistence.save_json(benchmark_run, json_path)
                 logger.info(f"✓ JSON report: {json_path}")
-            elif format_type == "csv":
+                save_results["succeeded"].append(("json", str(json_path)))
+            except Exception as e:
+                logger.error(f"✗ JSON report save failed: {e}")
+                save_results["failed"].append(("json", str(e)))
+        elif format_type == "csv":
+            try:
                 csv_path = run_dir / "results.csv"
                 persistence.save_csv(benchmark_run, csv_path)
                 logger.info(f"✓ CSV report: {csv_path}")
-            elif format_type == "markdown":
+                save_results["succeeded"].append(("csv", str(csv_path)))
+            except Exception as e:
+                logger.error(f"✗ CSV report save failed: {e}")
+                save_results["failed"].append(("csv", str(e)))
+        elif format_type == "markdown":
+            try:
                 md_path = run_dir / "results.md"
                 persistence.save_markdown(benchmark_run, md_path)
                 logger.info(f"✓ Markdown report: {md_path}")
-            elif format_type == "html":
-                # Generate HTML report in run directory
-                if benchmark_run.visualization_paths:
-                    try:
-                        viz_gen = VisualizationGenerator(
-                            output_dir=str(run_dir),
-                            dpi=config.visualization_dpi
-                        )
-                        html_path = viz_gen.generate_html_report(benchmark_run, benchmark_run.visualization_paths)
-                        benchmark_run.html_report_path = html_path
-                        logger.info(f"✓ HTML report: {html_path}")
-                    except Exception as e:
-                        logger.warning(f"HTML report generation failed: {e}")
-                else:
-                    logger.warning("HTML report skipped (no visualizations available)")
+                save_results["succeeded"].append(("markdown", str(md_path)))
+            except Exception as e:
+                logger.error(f"✗ MARKDOWN report save failed: {e}")
+                save_results["failed"].append(("markdown", str(e)))
+        elif format_type == "html":
+            # Generate HTML report in run directory
+            if benchmark_run.visualization_paths:
+                try:
+                    viz_gen = VisualizationGenerator(
+                        output_dir=str(run_dir),
+                        dpi=config.visualization_dpi
+                    )
+                    html_path = viz_gen.generate_html_report(benchmark_run, benchmark_run.visualization_paths)
+                    benchmark_run.html_report_path = html_path
+                    logger.info(f"✓ HTML report: {html_path}")
+                    save_results["succeeded"].append(("html", str(html_path)))
+                except Exception as e:
+                    logger.error(f"✗ HTML report save failed: {e}")
+                    save_results["failed"].append(("html", str(e)))
+            else:
+                logger.warning("HTML report skipped (no visualizations available)")
+    
+    # Report summary
+    if save_results["failed"]:
+        failed_formats = [fmt for fmt, _ in save_results["failed"]]
+        logger.warning(
+            f"Report generation completed with failures. "
+            f"Failed formats: {', '.join(failed_formats)}"
+        )
         
-    except Exception as e:
-        logger.error(f"Report generation failed: {e}", exc_info=True)
-        logger.warning("Some reports may not have been generated")
+        # If ALL formats failed, raise an exception
+        if not save_results["succeeded"]:
+            raise Exception(
+                f"All report formats failed to save. Errors: "
+                f"{'; '.join([f'{fmt}: {err}' for fmt, err in save_results['failed']])}"
+            )
+    else:
+        logger.info("✓ All reports generated successfully")
 
 
 def main():
