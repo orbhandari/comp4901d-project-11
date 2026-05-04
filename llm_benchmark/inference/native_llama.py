@@ -129,22 +129,19 @@ class NativeLlamaCpp:
         
         logger.debug(f"Running: {' '.join(cmd)}")
         
-        # Run binary with stdin pipe to send EOF
+        # Run binary - use DEVNULL for stdin (don't send EOF, just close it completely)
         try:
             start_time = time.time()
             
-            # Use PIPE for stdin so we can close it (send EOF)
+            # Use DEVNULL for stdin - completely closed, no EOF signal
+            # This is cleaner than sending EOF
             process = subprocess.Popen(
                 cmd,
-                stdin=subprocess.PIPE,  # Use PIPE to send EOF
+                stdin=subprocess.DEVNULL,  # Completely closed stdin
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            
-            # Immediately close stdin to send EOF signal
-            # This should prevent interactive mode
-            process.stdin.close()
             
             # Wait for completion with timeout
             try:
