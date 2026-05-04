@@ -1359,7 +1359,7 @@ class AblationEngine:
     
     def _run_batch_test(
         self,
-        llm: Llama,
+        llm: Any,
         prompts: List[str],
         max_tokens: int,
         batch_size: int,
@@ -1369,7 +1369,7 @@ class AblationEngine:
         Run a single batch test.
         
         Args:
-            llm: Loaded Llama model instance
+            llm: Loaded model instance (Llama or NativeLlamaCpp)
             prompts: List of prompts for this batch
             max_tokens: Maximum tokens to generate per prompt
             batch_size: Current batch size being tested
