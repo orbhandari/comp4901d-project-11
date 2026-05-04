@@ -12,7 +12,7 @@ models/
 
 # Benchmark results
 benchmark_results/
-results/
+/results/
 demo_output/
 
 # Python
