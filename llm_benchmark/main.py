@@ -38,6 +38,8 @@ def validate_dependencies() -> bool:
     """
     Validate that all required dependencies are installed.
     
+    On Android, llama-cpp-python is optional since we use native llama.cpp.
+    
     Returns:
         True if all dependencies are available, False otherwise
     
@@ -46,9 +48,13 @@ def validate_dependencies() -> bool:
     logger = get_logger(__name__)
     missing_packages = []
     
+    # Detect if we're on Android
+    from llm_benchmark.hardware.detector import HardwareDetector
+    hw_info = HardwareDetector.detect()
+    is_android = hw_info.os_type == "android"
+    
     # Check required packages
     required_packages = {
-        'llama_cpp': 'llama-cpp-python',
         'psutil': 'psutil',
         'pandas': 'pandas',
         'matplotlib': 'matplotlib',
@@ -57,6 +63,10 @@ def validate_dependencies() -> bool:
         'scipy': 'scipy',
         'huggingface_hub': 'huggingface-hub'
     }
+    
+    # llama-cpp-python is only required on non-Android platforms
+    if not is_android:
+        required_packages['llama_cpp'] = 'llama-cpp-python'
     
     for module_name, package_name in required_packages.items():
         try:
@@ -70,6 +80,10 @@ def validate_dependencies() -> bool:
         'yaml': 'pyyaml (for YAML config files)'
     }
     
+    # On Android, llama-cpp-python is optional (we use native llama.cpp)
+    if is_android:
+        optional_packages['llama_cpp'] = 'llama-cpp-python (optional - using native llama.cpp)'
+    
     for module_name, package_desc in optional_packages.items():
         try:
             __import__(module_name)
@@ -81,10 +95,28 @@ def validate_dependencies() -> bool:
         for package in missing_packages:
             logger.error(f"  - {package}")
         logger.info("\nInstall missing packages with:")
-        logger.info(f"  pip install {' '.join(missing_packages)}")
+        if is_android:
+            logger.info("On Android/Termux:")
+            logger.info("  pkg install python-numpy python-psutil python-pandas python-matplotlib python-scipy python-pyyaml")
+            logger.info("  pip install seaborn huggingface-hub")
+        else:
+            logger.info(f"  pip install {' '.join(missing_packages)}")
         return False
     
     logger.info("All required dependencies are installed")
+    
+    # On Android, check for native llama.cpp
+    if is_android:
+        from pathlib import Path
+        llama_cli = Path("~/llama.cpp/build/bin/llama-cli").expanduser()
+        if llama_cli.exists():
+            logger.info("✅ Native llama.cpp found at ~/llama.cpp/build/bin/llama-cli")
+        else:
+            logger.warning("⚠️  Native llama.cpp not found at ~/llama.cpp/build/bin/llama-cli")
+            logger.warning("   Build it with:")
+            logger.warning("     cd ~/llama.cpp")
+            logger.warning("     cmake -B build && cmake --build build -j4")
+    
     return True
 
 
