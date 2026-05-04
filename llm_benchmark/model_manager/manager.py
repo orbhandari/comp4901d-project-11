@@ -49,6 +49,9 @@ class ModelManager:
         """
         if cache_dir is None:
             cache_dir = os.path.expanduser("~/.cache/llm_benchmark/models")
+        else:
+            # Expand ~ and environment variables in user-provided path
+            cache_dir = os.path.expanduser(os.path.expandvars(cache_dir))
         
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
