@@ -90,7 +90,6 @@ class NativeLlamaCpp:
             "-p", prompt,
             "--no-display-prompt",  # Don't echo prompt
             "--log-disable",  # Disable logging to stderr
-            "--simple-io",  # Simple input/output mode
         ]
         
         logger.debug(f"Running: {' '.join(cmd)}")
@@ -102,24 +101,23 @@ class NativeLlamaCpp:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=1
+                bufsize=0  # Unbuffered
             )
             
             # Collect all output
             full_output = []
             
-            # Stream output character by character
-            while True:
-                char = process.stdout.read(1)
-                if not char:
+            # Read output line by line (more reliable than char-by-char)
+            for line in iter(process.stdout.readline, ''):
+                if not line:
                     break
                 
-                full_output.append(char)
+                full_output.append(line)
                 
                 # Yield in llama-cpp-python compatible format
                 yield {
                     'choices': [{
-                        'text': char,
+                        'text': line,
                         'finish_reason': None
                     }]
                 }
