@@ -495,10 +495,16 @@ class ResultsPersistence:
 
         # Try to get CUDA version (if available)
         try:
-            import pynvml
-            pynvml.nvmlInit()
-            versions["cuda_driver"] = pynvml.nvmlSystemGetDriverVersion()
-            pynvml.nvmlShutdown()
+            # Try nvidia-ml-py3 first (modern replacement for pynvml)
+            try:
+                import nvidia_ml_py3 as nvml
+            except ImportError:
+                # Fallback to pynvml for backward compatibility
+                import pynvml as nvml
+            
+            nvml.nvmlInit()
+            versions["cuda_driver"] = nvml.nvmlSystemGetDriverVersion()
+            nvml.nvmlShutdown()
         except Exception:
             versions["cuda_driver"] = "not available"
 

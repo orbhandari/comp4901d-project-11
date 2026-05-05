@@ -206,40 +206,104 @@ class HardwareDetector:
         Returns:
             Tuple of (has_gpu, gpu_model, gpu_memory_gb, gpu_compute_capability)
         """
+        # First, try to detect if this is a Jetson device
+        is_jetson = False
         try:
-            import pynvml
-            
-            pynvml.nvmlInit()
-            device_count = pynvml.nvmlDeviceGetCount()
-            
-            if device_count > 0:
-                handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-                gpu_model = pynvml.nvmlDeviceGetName(handle)
-                
-                # Decode if bytes
-                if isinstance(gpu_model, bytes):
-                    gpu_model = gpu_model.decode('utf-8')
-                
-                # Get memory info
-                mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                gpu_memory_gb = mem_info.total / (1024 ** 3)
-                
-                # Get compute capability
-                try:
-                    major = pynvml.nvmlDeviceGetCudaComputeCapability(handle)[0]
-                    minor = pynvml.nvmlDeviceGetCudaComputeCapability(handle)[1]
-                    gpu_compute_capability = f"{major}.{minor}"
-                except:
-                    gpu_compute_capability = "Unknown"
-                
-                pynvml.nvmlShutdown()
-                
-                return True, gpu_model, round(gpu_memory_gb, 2), gpu_compute_capability
-            
-            pynvml.nvmlShutdown()
-        except Exception as e:
-            logger.debug(f"GPU detection failed: {e}")
+            with open('/proc/device-tree/model', 'r') as f:
+                model = f.read().strip().lower()
+                if 'jetson' in model or 'xavier' in model or 'nano' in model or 'orin' in model:
+                    is_jetson = True
+                    logger.debug(f"Detected Jetson device: {model}")
+        except:
+            pass
         
+        # Try different NVML libraries with Jetson-specific handling
+        nvml_modules = []
+        
+        if is_jetson:
+            # On Jetson, pynvml might be more reliable due to older CUDA versions
+            nvml_modules = [
+                ("pynvml", "pynvml (Jetson-optimized)"),
+                ("nvidia_ml_py3", "nvidia-ml-py3")
+            ]
+        else:
+            # On other systems, prefer nvidia-ml-py3
+            nvml_modules = [
+                ("nvidia_ml_py3", "nvidia-ml-py3"),
+                ("pynvml", "pynvml (legacy)")
+            ]
+        
+        for module_name, description in nvml_modules:
+            try:
+                if module_name == "nvidia_ml_py3":
+                    import nvidia_ml_py3 as nvml
+                else:
+                    import pynvml as nvml
+                
+                logger.debug(f"Trying GPU detection with {description}")
+                
+                nvml.nvmlInit()
+                device_count = nvml.nvmlDeviceGetCount()
+                
+                if device_count > 0:
+                    handle = nvml.nvmlDeviceGetHandleByIndex(0)
+                    gpu_model = nvml.nvmlDeviceGetName(handle)
+                    
+                    # Decode if bytes
+                    if isinstance(gpu_model, bytes):
+                        gpu_model = gpu_model.decode('utf-8')
+                    
+                    # Get memory info
+                    mem_info = nvml.nvmlDeviceGetMemoryInfo(handle)
+                    gpu_memory_gb = mem_info.total / (1024 ** 3)
+                    
+                    # Get compute capability
+                    try:
+                        major = nvml.nvmlDeviceGetCudaComputeCapability(handle)[0]
+                        minor = nvml.nvmlDeviceGetCudaComputeCapability(handle)[1]
+                        gpu_compute_capability = f"{major}.{minor}"
+                    except:
+                        gpu_compute_capability = "Unknown"
+                    
+                    nvml.nvmlShutdown()
+                    
+                    logger.info(f"GPU detected using {description}: {gpu_model}")
+                    return True, gpu_model, round(gpu_memory_gb, 2), gpu_compute_capability
+                
+                nvml.nvmlShutdown()
+                logger.debug(f"No GPU devices found with {description}")
+                
+            except ImportError:
+                logger.debug(f"{module_name} not available")
+                continue
+            except Exception as e:
+                logger.debug(f"GPU detection failed with {description}: {e}")
+                continue
+        
+        # If NVML libraries fail, try nvidia-smi as fallback for Jetson
+        if is_jetson:
+            try:
+                import subprocess
+                result = subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total', '--format=csv,noheader,nounits'], 
+                                     capture_output=True, text=True, timeout=10)
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    lines = result.stdout.strip().split('\n')
+                    if lines:
+                        parts = lines[0].split(', ')
+                        if len(parts) >= 2:
+                            gpu_model = parts[0].strip()
+                            try:
+                                gpu_memory_mb = float(parts[1].strip())
+                                gpu_memory_gb = gpu_memory_mb / 1024
+                                logger.info(f"GPU detected via nvidia-smi fallback: {gpu_model}")
+                                return True, gpu_model, round(gpu_memory_gb, 2), "Unknown"
+                            except ValueError:
+                                pass
+            except Exception as e:
+                logger.debug(f"nvidia-smi fallback failed: {e}")
+        
+        logger.debug("No GPU detected")
         return False, None, None, None
     
     @staticmethod

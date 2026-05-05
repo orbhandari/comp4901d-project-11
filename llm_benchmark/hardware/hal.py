@@ -569,22 +569,27 @@ class JetsonBackend(HardwareBackend):
             return None
         
         try:
-            import pynvml
+            # Try nvidia-ml-py3 first (modern replacement for pynvml)
+            try:
+                import nvidia_ml_py3 as nvml
+            except ImportError:
+                # Fallback to pynvml for backward compatibility
+                import pynvml as nvml
             
             # Initialize NVML if not already done
             try:
-                pynvml.nvmlInit()
-            except pynvml.NVMLError:
-                # Already initialized
+                nvml.nvmlInit()
+            except:
+                # Already initialized or failed
                 pass
             
             # Get GPU handle
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            handle = nvml.nvmlDeviceGetHandleByIndex(0)
             
             # Query temperature
-            temp = pynvml.nvmlDeviceGetTemperature(
+            temp = nvml.nvmlDeviceGetTemperature(
                 handle,
-                pynvml.NVML_TEMPERATURE_GPU
+                nvml.NVML_TEMPERATURE_GPU
             )
             
             return float(temp)
@@ -607,20 +612,25 @@ class JetsonBackend(HardwareBackend):
             return None
         
         try:
-            import pynvml
+            # Try nvidia-ml-py3 first (modern replacement for pynvml)
+            try:
+                import nvidia_ml_py3 as nvml
+            except ImportError:
+                # Fallback to pynvml for backward compatibility
+                import pynvml as nvml
             
             # Initialize NVML if not already done
             try:
-                pynvml.nvmlInit()
-            except pynvml.NVMLError:
-                # Already initialized
+                nvml.nvmlInit()
+            except:
+                # Already initialized or failed
                 pass
             
             # Get GPU handle
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            handle = nvml.nvmlDeviceGetHandleByIndex(0)
             
             # Query power usage (returns milliwatts)
-            power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
+            power_mw = nvml.nvmlDeviceGetPowerUsage(handle)
             power_watts = power_mw / 1000.0
             
             return power_watts

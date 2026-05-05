@@ -285,8 +285,24 @@ sudo reboot
 # Check if NVIDIA GPU is detected
 nvidia-smi
 
-# Check if pynvml is installed
-python -c "import pynvml; pynvml.nvmlInit(); print('GPU detected')"
+# Check if nvidia-ml-py3 or pynvml is installed
+python -c "
+try:
+    import nvidia_ml_py3 as nvml
+    nvml.nvmlInit()
+    print('GPU detected with nvidia-ml-py3')
+except ImportError:
+    try:
+        import pynvml as nvml
+        nvml.nvmlInit()
+        print('GPU detected with pynvml (consider upgrading to nvidia-ml-py3)')
+    except ImportError:
+        print('Neither nvidia-ml-py3 nor pynvml available')
+    except Exception as e:
+        print(f'GPU detection failed: {e}')
+except Exception as e:
+    print(f'GPU detection failed: {e}')
+"
 
 # Check CUDA version
 nvcc --version

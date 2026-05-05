@@ -45,16 +45,28 @@ class MetricsCollector:
         # Initialize GPU monitoring if available
         self.nvml_initialized = False
         self.gpu_handle = None
+        self.nvml_module = None
         
         if self.hw_info.has_gpu:
             try:
-                import pynvml
-                pynvml.nvmlInit()
+                # Try nvidia-ml-py3 first (modern replacement for pynvml)
+                try:
+                    import nvidia_ml_py3 as nvml
+                    self.nvml_module = nvml
+                    logger.debug("Using nvidia-ml-py3 for GPU monitoring")
+                except ImportError:
+                    # Fallback to pynvml for backward compatibility
+                    import pynvml as nvml
+                    self.nvml_module = nvml
+                    logger.debug("Using pynvml for GPU monitoring (consider upgrading to nvidia-ml-py3)")
+                
+                self.nvml_module.nvmlInit()
                 self.nvml_initialized = True
-                self.gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                self.gpu_handle = self.nvml_module.nvmlDeviceGetHandleByIndex(0)
                 logger.info("GPU monitoring initialized")
             except Exception as e:
                 logger.warning(f"Failed to initialize GPU monitoring: {e}")
+                self.nvml_module = None
         
         # Initialize thermal and power monitors
         self.thermal_monitor = None
@@ -76,10 +88,9 @@ class MetricsCollector:
     
     def __del__(self):
         """Cleanup NVML on destruction."""
-        if self.nvml_initialized:
+        if self.nvml_initialized and self.nvml_module:
             try:
-                import pynvml
-                pynvml.nvmlShutdown()
+                self.nvml_module.nvmlShutdown()
             except:
                 pass
     
@@ -406,9 +417,10 @@ class MetricsCollector:
         Returns:
             GPU memory usage in megabytes
         """
-        import pynvml
+        if not self.nvml_module:
+            return 0.0
         
-        mem_info = pynvml.nvmlDeviceGetMemoryInfo(self.gpu_handle)
+        mem_info = self.nvml_module.nvmlDeviceGetMemoryInfo(self.gpu_handle)
         return mem_info.used / (1024 * 1024)
     
     def _get_gpu_utilization_pct(self) -> float:
@@ -418,9 +430,10 @@ class MetricsCollector:
         Returns:
             GPU utilization as percentage (0-100)
         """
-        import pynvml
+        if not self.nvml_module:
+            return 0.0
         
-        utilization = pynvml.nvmlDeviceGetUtilizationRates(self.gpu_handle)
+        utilization = self.nvml_module.nvmlDeviceGetUtilizationRates(self.gpu_handle)
         return float(utilization.gpu)
     
     def _get_cpu_temperature(self) -> Optional[float]:
@@ -457,15 +470,13 @@ class MetricsCollector:
         Returns:
             GPU temperature or None if unavailable
         """
-        if not self.nvml_initialized or not self.gpu_handle:
+        if not self.nvml_initialized or not self.gpu_handle or not self.nvml_module:
             return None
         
         try:
-            import pynvml
-            
-            temp = pynvml.nvmlDeviceGetTemperature(
+            temp = self.nvml_module.nvmlDeviceGetTemperature(
                 self.gpu_handle,
-                pynvml.NVML_TEMPERATURE_GPU
+                self.nvml_module.NVML_TEMPERATURE_GPU
             )
             return float(temp)
         
@@ -481,12 +492,10 @@ class MetricsCollector:
             Power consumption or None if unavailable
         """
         # Try GPU power first (more reliable on Jetson)
-        if self.nvml_initialized and self.gpu_handle:
+        if self.nvml_initialized and self.gpu_handle and self.nvml_module:
             try:
-                import pynvml
-                
                 # Power in milliwatts
-                power_mw = pynvml.nvmlDeviceGetPowerUsage(self.gpu_handle)
+                power_mw = self.nvml_module.nvmlDeviceGetPowerUsage(self.gpu_handle)
                 return power_mw / 1000.0
             
             except Exception as e:

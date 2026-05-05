@@ -767,11 +767,17 @@ class TestOrchestrator:
         # Try to get CUDA version if available
         if self.hw_info.has_gpu:
             try:
-                import pynvml
-                pynvml.nvmlInit()
-                cuda_version = pynvml.nvmlSystemGetCudaDriverVersion()
+                # Try nvidia-ml-py3 first (modern replacement for pynvml)
+                try:
+                    import nvidia_ml_py3 as nvml
+                except ImportError:
+                    # Fallback to pynvml for backward compatibility
+                    import pynvml as nvml
+                
+                nvml.nvmlInit()
+                cuda_version = nvml.nvmlSystemGetCudaDriverVersion()
                 versions['cuda'] = f"{cuda_version // 1000}.{(cuda_version % 1000) // 10}"
-                pynvml.nvmlShutdown()
+                nvml.nvmlShutdown()
             except:
                 versions['cuda'] = 'unknown'
         
