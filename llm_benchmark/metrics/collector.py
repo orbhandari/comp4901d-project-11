@@ -153,7 +153,8 @@ class MetricsCollector:
         prompt: str,
         max_tokens: int,
         enable_background_monitoring: bool = True,
-        timeout_s: int = 300
+        timeout_s: int = 300,
+        enable_prompt_cache: bool = False
     ) -> Optional[InferenceMetrics]:
         """
         Collect comprehensive metrics during inference with timeout protection.
@@ -167,6 +168,7 @@ class MetricsCollector:
             max_tokens: Maximum tokens to generate
             enable_background_monitoring: Enable background thermal/power monitoring
             timeout_s: Timeout in seconds (default: 300)
+            enable_prompt_cache: Enable prompt caching for this request (NativeLlamaServer only)
         
         Returns:
             InferenceMetrics with all collected measurements, or None if timeout occurs
@@ -181,7 +183,7 @@ class MetricsCollector:
             # Use timeout context manager
             with self._timeout_context(timeout_s):
                 return self._collect_inference_metrics_impl(
-                    llm, prompt, max_tokens, enable_background_monitoring
+                    llm, prompt, max_tokens, enable_background_monitoring, enable_prompt_cache
                 )
         except InferenceTimeoutError as e:
             logger.error(f"Inference timed out after {timeout_s}s")
@@ -205,7 +207,8 @@ class MetricsCollector:
         llm,
         prompt: str,
         max_tokens: int,
-        enable_background_monitoring: bool = True
+        enable_background_monitoring: bool = True,
+        enable_prompt_cache: bool = False
     ) -> InferenceMetrics:
         """
         Collect comprehensive metrics during inference.
@@ -215,6 +218,7 @@ class MetricsCollector:
             prompt: Input prompt text
             max_tokens: Maximum tokens to generate
             enable_background_monitoring: Enable background thermal/power monitoring
+            enable_prompt_cache: Enable prompt caching for this request (NativeLlamaServer only)
         
         Returns:
             InferenceMetrics with all collected measurements
@@ -252,12 +256,23 @@ class MetricsCollector:
         # Perform streaming inference to capture TTFT
         try:
             # Use streaming to capture first token time
-            stream = llm(
-                prompt,
-                max_tokens=max_tokens,
-                stream=True,
-                echo=False
-            )
+            # Check if llm supports enable_prompt_cache parameter (NativeLlamaServer)
+            if hasattr(llm, '__call__') and 'enable_prompt_cache' in llm.__call__.__code__.co_varnames:
+                stream = llm(
+                    prompt,
+                    max_tokens=max_tokens,
+                    stream=True,
+                    echo=False,
+                    enable_prompt_cache=enable_prompt_cache
+                )
+            else:
+                # Fallback for NativeLlamaCpp and other backends
+                stream = llm(
+                    prompt,
+                    max_tokens=max_tokens,
+                    stream=True,
+                    echo=False
+                )
             
             for chunk in stream:
                 current_time = time.perf_counter()

@@ -128,7 +128,7 @@ This implementation plan converts the feature design into a series of coding tas
     - Set appropriate default values
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
 
-  - [-] 7.2 Implement backend selection in AndroidBackend
+  - [x] 7.2 Implement backend selection in AndroidBackend
     - Add logic for automatic backend selection based on ablation settings
     - Implement binary availability detection
     - Add explicit configuration override support
@@ -155,19 +155,19 @@ This implementation plan converts the feature design into a series of coding tas
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
 - [ ] 8. Integrate with AndroidAblationEngine
-  - [ ] 8.1 Update AndroidAblationEngine to detect backend type
+  - [x] 8.1 Update AndroidAblationEngine to detect backend type
     - Add logic to detect NativeLlamaServer vs NativeLlamaCpp
     - Implement cache_mode configuration for ablation scenarios
     - Maintain existing prompt_cache file approach for llama-cli
     - _Requirements: 11.1, 11.2, 11.3_
 
-  - [ ] 8.2 Implement ablation scenario cache configuration
+  - [x] 8.2 Implement ablation scenario cache configuration
     - Map control runs to cache_mode "none" and enable_prompt_cache false
     - Map cold cache runs to cache_mode "both" with proper prompt cache handling
     - Map warm cache runs to cache_mode "both" with cache reuse
     - _Requirements: 6.1, 6.2, 6.3_
 
-  - [ ] 8.3 Update result metadata and logging
+  - [x] 8.3 Update result metadata and logging
     - Add backend type to result configuration metadata
     - Log warnings when using llama-cli for ablation studies
     - Add cache activity verification for control runs
