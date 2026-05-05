@@ -1,0 +1,631 @@
+{
+  "run_id": "20260505_160613",
+  "timestamp": "2026-05-05T16:06:32.689486",
+  "duration_s": 857.43,
+  "hardware_info": {
+    "os_type": "jetson_xavier_nx",
+    "cpu_model": "ARMv8 Processor rev 0 (v8l)",
+    "cpu_cores": 6,
+    "cpu_features": [],
+    "total_ram_gb": 14.54,
+    "available_ram_gb": 11.02,
+    "has_gpu": false,
+    "gpu_model": null,
+    "gpu_memory_gb": null,
+    "gpu_compute_capability": null,
+    "has_thermal_sensors": true,
+    "has_power_sensors": true
+  },
+  "software_versions": {
+    "python": "3.9.5",
+    "llama-cpp-python": "0.3.22"
+  },
+  "config": {
+    "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+    "models": {
+      "Q8_0": "tinyllama-1.1b-chat-v1.0.Q8_0.gguf",
+      "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf",
+      "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf"
+    },
+    "model_cache_dir": "./models",
+    "context_size": 2048,
+    "batch_size": 512,
+    "max_tokens": 100,
+    "iterations": 5,
+    "warmup_runs": 2,
+    "enable_quantization_profiling": true,
+    "enable_ablation_studies": true,
+    "enable_batch_testing": true,
+    "enable_thermal_monitoring": true,
+    "kv_cache_types": [
+      "ram",
+      "disk"
+    ],
+    "prompt_cache_prefix_lengths": [
+      100,
+      500,
+      1000
+    ],
+    "batch_sizes": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "sleep_between_tests_s": 5,
+    "thermal_stabilization_threshold_c": 70.0,
+    "inference_timeout_s": 300,
+    "output_dir": "./benchmark_results",
+    "save_formats": [
+      "json",
+      "csv",
+      "markdown",
+      "html"
+    ],
+    "visualization_dpi": 300,
+    "hf_token": null
+  },
+  "model_checksums": {
+    "Q8_0": "a4c9bb1dbaa372f6381a035fa5c02ef087aaa1ff1f843a56a22328114f03fc59",
+    "Q4_0": "da3087fb14aede55fde6eb81a0e55e886810e43509ec82ecdc7aa5d62a03b556",
+    "Q2_K": "030a469a63576d59f601ef5608846b7718eaa884dd820e9aa7493efec1788afa"
+  },
+  "quantization_results": [
+    {
+      "quantization": "Q8_0",
+      "load_time_s": 0.85,
+      "peak_ram_mb": 1639.65,
+      "ram_increase_mb": 1181.88,
+      "ttft_ms": 147.86,
+      "prefill_tps": 128.5,
+      "decode_tps": 5.14,
+      "prompt_tokens": 19,
+      "output_tokens": 59,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 1
+    },
+    {
+      "quantization": "Q4_0",
+      "load_time_s": 0.4,
+      "peak_ram_mb": 1131.58,
+      "ram_increase_mb": 670.77,
+      "ttft_ms": 150.78,
+      "prefill_tps": 126.01,
+      "decode_tps": 4.67,
+      "prompt_tokens": 19,
+      "output_tokens": 17,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 1
+    },
+    {
+      "quantization": "Q2_K",
+      "load_time_s": 0.37,
+      "peak_ram_mb": 986.33,
+      "ram_increase_mb": 525.09,
+      "ttft_ms": 180.25,
+      "prefill_tps": 105.41,
+      "decode_tps": 4.18,
+      "prompt_tokens": 19,
+      "output_tokens": 51,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 1
+    },
+    {
+      "quantization": "Q8_0",
+      "load_time_s": 0.46,
+      "peak_ram_mb": 1638.14,
+      "ram_increase_mb": 1176.89,
+      "ttft_ms": 138.2,
+      "prefill_tps": 137.48,
+      "decode_tps": 4.99,
+      "prompt_tokens": 19,
+      "output_tokens": 59,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 2
+    },
+    {
+      "quantization": "Q4_0",
+      "load_time_s": 0.41,
+      "peak_ram_mb": 1136.58,
+      "ram_increase_mb": 675.33,
+      "ttft_ms": 150.34,
+      "prefill_tps": 126.38,
+      "decode_tps": 4.62,
+      "prompt_tokens": 19,
+      "output_tokens": 17,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 2
+    },
+    {
+      "quantization": "Q2_K",
+      "load_time_s": 0.36,
+      "peak_ram_mb": 991.16,
+      "ram_increase_mb": 525.09,
+      "ttft_ms": 177.38,
+      "prefill_tps": 107.11,
+      "decode_tps": 4.16,
+      "prompt_tokens": 19,
+      "output_tokens": 51,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 2
+    },
+    {
+      "quantization": "Q8_0",
+      "load_time_s": 0.46,
+      "peak_ram_mb": 1642.97,
+      "ram_increase_mb": 1176.89,
+      "ttft_ms": 141.91,
+      "prefill_tps": 133.88,
+      "decode_tps": 5.08,
+      "prompt_tokens": 19,
+      "output_tokens": 59,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 3
+    },
+    {
+      "quantization": "Q4_0",
+      "load_time_s": 0.39,
+      "peak_ram_mb": 1136.59,
+      "ram_increase_mb": 670.51,
+      "ttft_ms": 159.07,
+      "prefill_tps": 119.45,
+      "decode_tps": 4.61,
+      "prompt_tokens": 19,
+      "output_tokens": 17,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 3
+    },
+    {
+      "quantization": "Q2_K",
+      "load_time_s": 0.37,
+      "peak_ram_mb": 991.39,
+      "ram_increase_mb": 525.31,
+      "ttft_ms": 178.2,
+      "prefill_tps": 106.62,
+      "decode_tps": 4.19,
+      "prompt_tokens": 19,
+      "output_tokens": 51,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 3
+    },
+    {
+      "quantization": "Q8_0",
+      "load_time_s": 0.45,
+      "peak_ram_mb": 1643.2,
+      "ram_increase_mb": 1176.89,
+      "ttft_ms": 140.42,
+      "prefill_tps": 135.31,
+      "decode_tps": 5.17,
+      "prompt_tokens": 19,
+      "output_tokens": 59,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 4
+    },
+    {
+      "quantization": "Q4_0",
+      "load_time_s": 0.39,
+      "peak_ram_mb": 1136.81,
+      "ram_increase_mb": 670.51,
+      "ttft_ms": 167.79,
+      "prefill_tps": 113.24,
+      "decode_tps": 3.7,
+      "prompt_tokens": 19,
+      "output_tokens": 17,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 4
+    },
+    {
+      "quantization": "Q2_K",
+      "load_time_s": 0.39,
+      "peak_ram_mb": 991.39,
+      "ram_increase_mb": 525.09,
+      "ttft_ms": 220.39,
+      "prefill_tps": 86.21,
+      "decode_tps": 4.05,
+      "prompt_tokens": 19,
+      "output_tokens": 51,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 4
+    },
+    {
+      "quantization": "Q8_0",
+      "load_time_s": 0.47,
+      "peak_ram_mb": 1643.2,
+      "ram_increase_mb": 1176.89,
+      "ttft_ms": 139.52,
+      "prefill_tps": 136.18,
+      "decode_tps": 5.09,
+      "prompt_tokens": 19,
+      "output_tokens": 59,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 5
+    },
+    {
+      "quantization": "Q4_0",
+      "load_time_s": 0.39,
+      "peak_ram_mb": 1136.81,
+      "ram_increase_mb": 670.51,
+      "ttft_ms": 156.55,
+      "prefill_tps": 121.37,
+      "decode_tps": 4.63,
+      "prompt_tokens": 19,
+      "output_tokens": 17,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 5
+    },
+    {
+      "quantization": "Q2_K",
+      "load_time_s": 0.36,
+      "peak_ram_mb": 991.39,
+      "ram_increase_mb": 525.09,
+      "ttft_ms": 179.52,
+      "prefill_tps": 105.84,
+      "decode_tps": 4.22,
+      "prompt_tokens": 19,
+      "output_tokens": 51,
+      "gpu_memory_mb": null,
+      "gpu_utilization_pct": null,
+      "used_gpu_acceleration": false,
+      "iteration": 5
+    }
+  ],
+  "ablation_results": [
+    {
+      "scenario": "control_no_cache",
+      "configuration": {
+        "cache_enabled": false,
+        "cache_type": null,
+        "cache_state": "N/A",
+        "true_no_cache_baseline": true
+      },
+      "metrics": {
+        "ttft_ms": 91293.04,
+        "prefill_tps": 12.51,
+        "decode_tps": 6.29,
+        "memory_overhead_mb": 1158.89,
+        "peak_memory_mb": 1718.17,
+        "prompt_tokens": 1142,
+        "output_tokens": 26
+      },
+      "improvement_over_baseline": null
+    },
+    {
+      "scenario": "cold_ram_cache",
+      "configuration": {
+        "cache_enabled": true,
+        "cache_type": "ram",
+        "cache_state": "empty"
+      },
+      "metrics": {
+        "ttft_ms": 91169.21,
+        "prefill_tps": 12.53,
+        "decode_tps": 6.33,
+        "memory_overhead_mb": 1152.92,
+        "peak_memory_mb": 1718.02,
+        "prompt_tokens": 1142,
+        "output_tokens": 26
+      },
+      "improvement_over_baseline": 0.14
+    },
+    {
+      "scenario": "warm_ram_cache",
+      "configuration": {
+        "cache_enabled": true,
+        "cache_type": "ram",
+        "cache_state": "populated"
+      },
+      "metrics": {
+        "ttft_ms": 1258.65,
+        "prefill_tps": 907.32,
+        "decode_tps": 6.47,
+        "cache_memory_overhead_mb": 94.16,
+        "total_memory_overhead_mb": 1205.32,
+        "peak_memory_mb": 1718.0,
+        "prompt_tokens": 1142,
+        "output_tokens": 51
+      },
+      "improvement_over_baseline": 98.62
+    },
+    {
+      "scenario": "cold_disk_cache",
+      "configuration": {
+        "cache_enabled": true,
+        "cache_type": "disk",
+        "cache_state": "empty"
+      },
+      "metrics": {
+        "ttft_ms": 91568.45,
+        "prefill_tps": 12.47,
+        "decode_tps": 6.04,
+        "memory_overhead_mb": 1153.18,
+        "peak_memory_mb": 1718.07,
+        "prompt_tokens": 1142,
+        "output_tokens": 26
+      },
+      "improvement_over_baseline": -0.3
+    },
+    {
+      "scenario": "warm_disk_cache",
+      "configuration": {
+        "cache_enabled": true,
+        "cache_type": "disk",
+        "cache_state": "populated"
+      },
+      "metrics": {
+        "ttft_ms": 1243.6,
+        "prefill_tps": 918.3,
+        "decode_tps": 6.37,
+        "cache_memory_overhead_mb": 94.03,
+        "total_memory_overhead_mb": 1205.07,
+        "peak_memory_mb": 1717.77,
+        "prompt_tokens": 1142,
+        "output_tokens": 51
+      },
+      "improvement_over_baseline": 98.64
+    }
+  ],
+  "batch_results": [],
+  "statistical_summaries": [
+    {
+      "metric_name": "ttft_ms",
+      "mean": 141.582,
+      "std_dev": 3.7603483881151303,
+      "confidence_interval_95": [
+        138.28590931095638,
+        144.8780906890436
+      ],
+      "outliers": [
+        147.86
+      ],
+      "quantization": "Q8_0"
+    },
+    {
+      "metric_name": "prefill_tps",
+      "mean": 134.27000000000004,
+      "std_dev": 3.481335950464992,
+      "confidence_interval_95": [
+        131.21847449560065,
+        137.32152550439943
+      ],
+      "outliers": [
+        128.5
+      ],
+      "quantization": "Q8_0"
+    },
+    {
+      "metric_name": "decode_tps",
+      "mean": 5.093999999999999,
+      "std_dev": 0.06877499545619743,
+      "confidence_interval_95": [
+        5.033716058523019,
+        5.154283941476979
+      ],
+      "outliers": [],
+      "quantization": "Q8_0"
+    },
+    {
+      "metric_name": "load_time_s",
+      "mean": 0.538,
+      "std_dev": 0.17455658108475886,
+      "confidence_interval_95": [
+        0.3849944105596139,
+        0.6910055894403861
+      ],
+      "outliers": [
+        0.85
+      ],
+      "quantization": "Q8_0"
+    },
+    {
+      "metric_name": "peak_ram_mb",
+      "mean": 1641.432,
+      "std_dev": 2.378543672081691,
+      "confidence_interval_95": [
+        1639.3471145474152,
+        1643.5168854525848
+      ],
+      "outliers": [],
+      "quantization": "Q8_0"
+    },
+    {
+      "metric_name": "ram_increase_mb",
+      "mean": 1177.8880000000004,
+      "std_dev": 2.2315958415447943,
+      "confidence_interval_95": [
+        1175.9319200000004,
+        1179.8440800000003
+      ],
+      "outliers": [
+        1181.88
+      ],
+      "quantization": "Q8_0"
+    },
+    {
+      "metric_name": "ttft_ms",
+      "mean": 156.906,
+      "std_dev": 7.139876049344269,
+      "confidence_interval_95": [
+        150.6476227066755,
+        163.16437729332452
+      ],
+      "outliers": [],
+      "quantization": "Q4_0"
+    },
+    {
+      "metric_name": "prefill_tps",
+      "mean": 121.29,
+      "std_dev": 5.394001297738074,
+      "confidence_interval_95": [
+        116.56194939959396,
+        126.01805060040606
+      ],
+      "outliers": [],
+      "quantization": "Q4_0"
+    },
+    {
+      "metric_name": "decode_tps",
+      "mean": 4.446,
+      "std_dev": 0.41764817729759096,
+      "confidence_interval_95": [
+        4.079915231674411,
+        4.8120847683255885
+      ],
+      "outliers": [
+        4.67,
+        3.7
+      ],
+      "quantization": "Q4_0"
+    },
+    {
+      "metric_name": "load_time_s",
+      "mean": 0.3960000000000001,
+      "std_dev": 0.008944271909999144,
+      "confidence_interval_95": [
+        0.38816000000000006,
+        0.4038400000000001
+      ],
+      "outliers": [],
+      "quantization": "Q4_0"
+    },
+    {
+      "metric_name": "peak_ram_mb",
+      "mean": 1135.6739999999998,
+      "std_dev": 2.291381679249447,
+      "confidence_interval_95": [
+        1133.6655154026976,
+        1137.682484597302
+      ],
+      "outliers": [
+        1131.58
+      ],
+      "quantization": "Q4_0"
+    },
+    {
+      "metric_name": "ram_increase_mb",
+      "mean": 671.5260000000001,
+      "std_dev": 2.1294788094743042,
+      "confidence_interval_95": [
+        669.6594295251451,
+        673.392570474855
+      ],
+      "outliers": [
+        675.33
+      ],
+      "quantization": "Q4_0"
+    },
+    {
+      "metric_name": "ttft_ms",
+      "mean": 187.14799999999997,
+      "std_dev": 18.616389821874698,
+      "confidence_interval_95": [
+        170.83001485015993,
+        203.46598514984
+      ],
+      "outliers": [
+        220.39
+      ],
+      "quantization": "Q2_K"
+    },
+    {
+      "metric_name": "prefill_tps",
+      "mean": 102.23799999999999,
+      "std_dev": 8.984306873654754,
+      "confidence_interval_95": [
+        94.36290780711741,
+        110.11309219288256
+      ],
+      "outliers": [
+        86.21
+      ],
+      "quantization": "Q2_K"
+    },
+    {
+      "metric_name": "decode_tps",
+      "mean": 4.16,
+      "std_dev": 0.06519202405202652,
+      "confidence_interval_95": [
+        4.102856671430517,
+        4.217143328569484
+      ],
+      "outliers": [
+        4.05
+      ],
+      "quantization": "Q2_K"
+    },
+    {
+      "metric_name": "load_time_s",
+      "mean": 0.37,
+      "std_dev": 0.012247448713915901,
+      "confidence_interval_95": [
+        0.35926463787289875,
+        0.38073536212710124
+      ],
+      "outliers": [
+        0.39
+      ],
+      "quantization": "Q2_K"
+    },
+    {
+      "metric_name": "peak_ram_mb",
+      "mean": 990.332,
+      "std_dev": 2.2394017058133815,
+      "confidence_interval_95": [
+        988.369077858294,
+        992.294922141706
+      ],
+      "outliers": [
+        986.33
+      ],
+      "quantization": "Q2_K"
+    },
+    {
+      "metric_name": "ram_increase_mb",
+      "mean": 525.134,
+      "std_dev": 0.09838699100995212,
+      "confidence_interval_95": [
+        525.04776,
+        525.22024
+      ],
+      "outliers": [
+        525.31
+      ],
+      "quantization": "Q2_K"
+    }
+  ],
+  "comparisons": [],
+  "visualization_paths": [
+    "benchmark_results/run_20260505_160613/visualizations/quantization_comparison.png",
+    "benchmark_results/run_20260505_160613/visualizations/memory_vs_speed_tradeoff.png",
+    "benchmark_results/run_20260505_160613/visualizations/ablation_comparison.png"
+  ],
+  "html_report_path": ""
+}
