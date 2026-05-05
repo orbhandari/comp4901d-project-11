@@ -233,17 +233,27 @@ class NativeLlamaServer:
         ]
         
         # Add cache control flags based on cache_mode
+        cache_flags = []
         if self.cache_mode == CacheMode.NONE:
-            cmd.extend(["--cache-ram", "0", "--no-cache-prompt"])
-            logger.debug("Cache mode: none - disabling both RAM and disk caching")
+            cache_flags.extend(["--cache-ram", "0", "--no-cache-prompt"])
+            logger.info("Cache mode: NONE - disabling both RAM and disk caching")
         elif self.cache_mode == CacheMode.RAM_ONLY:
-            cmd.append("--no-cache-prompt")
-            logger.debug("Cache mode: ram_only - disabling disk caching")
+            cache_flags.append("--no-cache-prompt")
+            logger.info("Cache mode: RAM_ONLY - disabling disk caching only")
         elif self.cache_mode == CacheMode.DISK_ONLY:
-            cmd.extend(["--cache-ram", "0"])
-            logger.debug("Cache mode: disk_only - disabling RAM caching")
+            cache_flags.extend(["--cache-ram", "0"])
+            logger.info("Cache mode: DISK_ONLY - disabling RAM caching only")
         elif self.cache_mode == CacheMode.BOTH:
-            logger.debug("Cache mode: both - enabling all caching")
+            logger.info("Cache mode: BOTH - enabling all caching")
+        
+        cmd.extend(cache_flags)
+        
+        # Log the complete command for debugging
+        logger.info(f"llama-server command: {' '.join(cmd)}")
+        if cache_flags:
+            logger.info(f"Cache control flags: {' '.join(cache_flags)}")
+        else:
+            logger.info("No cache control flags (default caching enabled)")
         
         return cmd
     
@@ -286,21 +296,48 @@ class NativeLlamaServer:
         """Start background thread to monitor subprocess memory."""
         def monitor_memory():
             """Monitor subprocess memory in background."""
+            import psutil
+            
+            # Get psutil process object for more reliable monitoring
+            try:
+                psutil_process = psutil.Process(self.last_subprocess_pid)
+                logger.debug(f"Memory monitoring started for PID {self.last_subprocess_pid}")
+            except psutil.NoSuchProcess:
+                logger.warning(f"Process {self.last_subprocess_pid} not found for memory monitoring")
+                return
+            
             while not self._stop_memory_monitoring.is_set() and self.subprocess_is_running:
                 try:
-                    if self.last_subprocess_pid:
-                        result = subprocess.run(
-                            ['ps', '-o', 'rss=', '-p', str(self.last_subprocess_pid)],
-                            capture_output=True,
-                            text=True,
-                            timeout=0.1
-                        )
-                        if result.returncode == 0 and result.stdout.strip():
-                            rss_kb = int(result.stdout.strip())
-                            self.subprocess_peak_memory_kb = max(self.subprocess_peak_memory_kb, rss_kb)
-                except Exception:
-                    pass
+                    if psutil_process.is_running():
+                        # Get memory info using psutil (more reliable than ps command)
+                        memory_info = psutil_process.memory_info()
+                        rss_kb = memory_info.rss // 1024  # Convert bytes to KB
+                        
+                        # Update peak memory
+                        old_peak = self.subprocess_peak_memory_kb
+                        self.subprocess_peak_memory_kb = max(self.subprocess_peak_memory_kb, rss_kb)
+                        
+                        # Log significant memory changes for debugging
+                        if rss_kb > old_peak + 10240:  # Log if memory increased by >10MB
+                            logger.debug(f"Memory increased: {old_peak//1024}MB -> {rss_kb//1024}MB")
+                    else:
+                        # Process has terminated
+                        logger.debug("llama-server process terminated, stopping memory monitoring")
+                        self.subprocess_is_running = False
+                        break
+                        
+                except psutil.NoSuchProcess:
+                    # Process terminated
+                    logger.debug("llama-server process no longer exists")
+                    self.subprocess_is_running = False
+                    break
+                except Exception as e:
+                    logger.debug(f"Memory monitoring error: {e}")
+                    # Continue monitoring despite errors
+                
                 time.sleep(0.05)  # Sample every 50ms
+            
+            logger.debug(f"Memory monitoring stopped. Peak memory: {self.subprocess_peak_memory_kb//1024}MB")
         
         self._memory_monitor_thread = threading.Thread(target=monitor_memory, daemon=True)
         self._memory_monitor_thread.start()
@@ -415,9 +452,33 @@ class NativeLlamaServer:
         # Calculate timeout: 2 seconds per token + 60s buffer
         timeout_seconds = max_tokens * 2 + 60
         
-        logger.debug(f"Sending completion request to {self.base_url}/completion")
-        logger.debug(f"Request body: {json.dumps(request_body, indent=2)}")
-        logger.debug(f"Timeout: {timeout_seconds}s")
+        # Enhanced logging for debugging cache behavior
+        logger.info(f"=== llama-server HTTP Request ===")
+        logger.info(f"Endpoint: {self.base_url}/completion")
+        logger.info(f"Cache mode (server): {self.cache_mode.value}")
+        logger.info(f"Cache prompt (request): {enable_prompt_cache}")
+        logger.info(f"Prompt length: {len(prompt)} chars (~{len(prompt)//4} tokens)")
+        logger.info(f"Max tokens: {max_tokens}")
+        logger.info(f"Timeout: {timeout_seconds}s")
+        logger.info(f"Request body cache_prompt: {request_body['cache_prompt']}")
+        
+        # Log cache configuration summary
+        cache_summary = []
+        if self.cache_mode == CacheMode.NONE:
+            cache_summary.append("RAM cache: DISABLED (--cache-ram 0)")
+            cache_summary.append("Disk cache: DISABLED (--no-cache-prompt)")
+        elif self.cache_mode == CacheMode.RAM_ONLY:
+            cache_summary.append("RAM cache: ENABLED")
+            cache_summary.append("Disk cache: DISABLED (--no-cache-prompt)")
+        elif self.cache_mode == CacheMode.DISK_ONLY:
+            cache_summary.append("RAM cache: DISABLED (--cache-ram 0)")
+            cache_summary.append("Disk cache: ENABLED")
+        elif self.cache_mode == CacheMode.BOTH:
+            cache_summary.append("RAM cache: ENABLED")
+            cache_summary.append("Disk cache: ENABLED")
+        
+        cache_summary.append(f"Request cache_prompt: {enable_prompt_cache}")
+        logger.info("Cache configuration: " + ", ".join(cache_summary))
         
         try:
             response = self.session.post(

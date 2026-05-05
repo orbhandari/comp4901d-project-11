@@ -76,8 +76,19 @@ class AndroidAblationEngine:
         self.temp_dirs: List[Path] = []
         self.temp_files: List[Path] = []
         
+        # Port management for llama-server instances
+        self._base_port = 8080
+        self._current_port = self._base_port
+        
         logger.info("AndroidAblationEngine initialized")
         logger.info("Using native llama.cpp --prompt-cache for caching tests")
+    
+    def _get_next_port(self) -> int:
+        """Get next available port for llama-server instance."""
+        port = self._current_port
+        self._current_port += 1
+        logger.debug(f"Allocated port {port} for llama-server")
+        return port
     
     def _load_model(self, model_path: str, **kwargs) -> Any:
         """
@@ -95,6 +106,12 @@ class AndroidAblationEngine:
         """
         # Pass enable_ablation_studies flag to backend for automatic selection
         kwargs['enable_ablation_studies'] = True
+        
+        # For llama-server, use a unique port for each instance
+        if 'cache_mode' in kwargs:
+            # This indicates we're loading a NativeLlamaServer
+            kwargs['port'] = self._get_next_port()
+            logger.info(f"Using port {kwargs['port']} for llama-server instance")
         
         llm = self.backend.load_model_safe(model_path, **kwargs)
         if llm is None:
@@ -485,8 +502,9 @@ class AndroidAblationEngine:
                     f"expected {expected_prompt_cache}, got {enable_prompt_cache}"
                 )
         
-        # Measure baseline memory
+        # Measure baseline memory (Python process)
         baseline_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        logger.info(f"Baseline Python process memory: {baseline_memory_mb:.2f}MB")
         
         # Get platform-specific configuration
         llama_config = self.backend.get_llama_config()
@@ -496,9 +514,25 @@ class AndroidAblationEngine:
         # Load model (NativeLlamaServer)
         llm = self._load_model(model_path, **llama_config)
         
-        # Measure memory after load
+        # Measure memory after load (Python process)
         post_load_memory_mb = self.process.memory_info().rss / (1024 * 1024)
-        memory_overhead_mb = post_load_memory_mb - baseline_memory_mb
+        python_memory_overhead_mb = post_load_memory_mb - baseline_memory_mb
+        
+        # Get llama-server subprocess memory (this is what we actually want to measure)
+        llama_server_memory_mb = 0
+        if hasattr(llm, 'subprocess_peak_memory_kb') and llm.subprocess_peak_memory_kb > 0:
+            llama_server_memory_mb = llm.subprocess_peak_memory_kb / 1024
+            logger.info(f"llama-server subprocess memory: {llama_server_memory_mb:.2f}MB")
+        else:
+            logger.warning("llama-server memory not available, using Python process memory")
+            llama_server_memory_mb = python_memory_overhead_mb
+        
+        # Reset peak memory counter for this test
+        if hasattr(llm, 'subprocess_peak_memory_kb'):
+            llm.subprocess_peak_memory_kb = 0
+        
+        logger.info(f"Memory overhead (Python): {python_memory_overhead_mb:.2f}MB")
+        logger.info(f"Memory (llama-server): {llama_server_memory_mb:.2f}MB")
         
         # For warm runs, do a preliminary inference to populate cache
         if is_warm_run:
@@ -523,8 +557,19 @@ class AndroidAblationEngine:
             enable_prompt_cache=enable_prompt_cache
         )
         
-        # Measure peak memory
-        peak_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        # Get final memory measurements
+        final_python_memory_mb = self.process.memory_info().rss / (1024 * 1024)
+        
+        # Use llama-server subprocess peak memory as the primary measurement
+        if hasattr(llm, 'subprocess_peak_memory_kb') and llm.subprocess_peak_memory_kb > 0:
+            peak_memory_mb = llm.subprocess_peak_memory_kb / 1024
+            memory_overhead_mb = peak_memory_mb - llama_server_memory_mb
+            logger.info(f"Using llama-server subprocess memory: {peak_memory_mb:.2f}MB")
+        else:
+            # Fallback to Python process memory if subprocess memory not available
+            peak_memory_mb = final_python_memory_mb
+            memory_overhead_mb = final_python_memory_mb - baseline_memory_mb
+            logger.warning("Using Python process memory (llama-server memory not available)")
         
         # Calculate improvement
         improvement_pct = None
@@ -551,6 +596,14 @@ class AndroidAblationEngine:
         scenario_description = "N/A"
         if scenario in ABLATION_CACHE_CONFIG:
             scenario_description = ABLATION_CACHE_CONFIG[scenario]["description"]
+        
+        # Clean up model instance
+        try:
+            if hasattr(llm, 'close'):
+                llm.close()
+                logger.info("Closed llama-server instance")
+        except Exception as e:
+            logger.warning(f"Error closing model: {e}")
         
         return AblationResult(
             scenario=scenario,
@@ -900,8 +953,30 @@ class AndroidAblationEngine:
     
     def _ensure_process_isolation(self) -> None:
         """Enforce process isolation between test runs."""
+        logger.info("Ensuring process isolation between tests...")
+        
+        # Force garbage collection
         gc.collect()
-        time.sleep(2)  # Allow system to stabilize
+        
+        # Wait for system to stabilize
+        time.sleep(3)
+        
+        # Check memory usage
+        current_memory = self.process.memory_info().rss / (1024 * 1024)
+        logger.info(f"Current process memory: {current_memory:.2f}MB")
+        
+        # Additional cleanup for Android
+        try:
+            # Force Python garbage collection multiple times
+            for _ in range(3):
+                collected = gc.collect()
+                if collected > 0:
+                    logger.debug(f"Garbage collected {collected} objects")
+                time.sleep(0.5)
+        except Exception as e:
+            logger.debug(f"Garbage collection error: {e}")
+        
+        logger.info("Process isolation complete")
     
     def _create_temp_cache_file(self) -> Path:
         """

@@ -988,6 +988,9 @@ class AndroidBackend(HardwareBackend):
             logger.info("Loading model with llama-server (this may take a while)...")
             logger.info(f"Cache mode: {cache_mode}")
             
+            # Get unique port for this instance (from kwargs if provided)
+            port = kwargs.get('port', android_config.llama_server_port)
+            
             llm = NativeLlamaServer(
                 model_path=model_path,
                 n_ctx=config.get('n_ctx', 2048),
@@ -996,7 +999,7 @@ class AndroidBackend(HardwareBackend):
                 cache_mode=cache_mode,
                 llama_server_path=str(llama_server),
                 host=android_config.llama_server_host,
-                port=android_config.llama_server_port
+                port=port
             )
             logger.info(f"Successfully loaded model with llama-server: {model_path}")
             
