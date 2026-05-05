@@ -328,8 +328,10 @@ class TestOrchestrator:
             logger.info(f"Using model for ablation: {model_path}")
         
         # Generate test prompts with substantial shared prefix
-        # Minimum 500 tokens recommended (roughly 2000 characters)
-        prompt_prefix = self._generate_long_prompt_prefix()
+        # Adjust prompt length based on context size to avoid exceeding limits
+        context_size = getattr(self.config, 'context_size', 2048)
+        max_prompt_tokens = int(context_size * 0.8)  # Use 80% of context for prompt
+        prompt_prefix = self._generate_long_prompt_prefix(max_tokens=max_prompt_tokens)
         prompt_suffix = " What are the key takeaways from this analysis?"
         
         # Run ablation studies (method differs by platform)
@@ -355,19 +357,19 @@ class TestOrchestrator:
         
         return results
     
-    def _generate_long_prompt_prefix(self) -> str:
+    def _generate_long_prompt_prefix(self, max_tokens: int = 500) -> str:
         """
         Generate a long prompt prefix for cache effectiveness testing.
         
-        Returns at least 500 tokens (approximately 2000 characters) of text
-        that can be used as a shared prefix for cache testing.
+        Args:
+            max_tokens: Maximum number of tokens to generate (approximate)
         
         Returns:
-            Long prompt prefix string
+            Long prompt prefix string, truncated to fit within max_tokens
         """
         # Generate a substantial prompt about a technical topic
         # This ensures we have enough tokens for effective cache testing
-        prefix = """
+        full_prefix = """
         Artificial Intelligence and Machine Learning have revolutionized numerous industries 
         over the past decade. From healthcare to finance, from transportation to entertainment, 
         AI systems are now integral to modern society. The development of large language models 
@@ -419,25 +421,25 @@ class TestOrchestrator:
         the specific deployment scenario, available hardware resources, and performance 
         requirements. In practice, hybrid approaches that combine both strategies can offer 
         the best balance of performance and resource utilization.
-        
-        Beyond caching, other optimization techniques include batching multiple requests 
-        together to improve GPU utilization, using mixed precision computation to accelerate 
-        inference, and implementing speculative decoding to generate multiple tokens in 
-        parallel. Each of these techniques has its own tradeoffs and is most effective in 
-        specific scenarios. Understanding these tradeoffs is essential for deploying language 
-        models effectively in production environments.
-        
-        The evaluation of language model performance requires comprehensive benchmarking 
-        across multiple dimensions. Traditional metrics like perplexity provide insight into 
-        the model's ability to predict text, but they don't capture all aspects of model 
-        quality. Task-specific benchmarks evaluate performance on concrete applications like 
-        question answering, summarization, and translation. Additionally, inference performance 
-        metrics such as throughput, latency, and memory usage are critical for practical 
-        deployment. A comprehensive benchmark suite should measure all these aspects to provide 
-        a complete picture of model capabilities and limitations.
         """
         
-        return prefix.strip()
+        # Approximate token count (1 token ≈ 4 characters)
+        full_text = full_prefix.strip()
+        estimated_tokens = len(full_text) // 4
+        
+        if estimated_tokens <= max_tokens:
+            return full_text
+        
+        # Truncate to fit within max_tokens
+        target_chars = max_tokens * 4
+        truncated = full_text[:target_chars]
+        
+        # Find the last complete sentence to avoid cutting mid-sentence
+        last_period = truncated.rfind('.')
+        if last_period > target_chars * 0.8:  # Only truncate if we don't lose too much
+            truncated = truncated[:last_period + 1]
+        
+        return truncated
     
     def run_batch_tests(self) -> List[Any]:
         """

@@ -11,7 +11,7 @@
   "model_cache_dir": "~/storage/shared/models",
   "output_dir": "~/storage/shared/benchmark_results",
   
-  "context_size": 1024,
+  "context_size": 2048,
   "batch_size": 256,
   "max_tokens": 100,
   
