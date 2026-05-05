@@ -1,6 +1,7 @@
 {
   "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
   "models": {
+    "Q8_0": "tinyllama-1.1b-chat-v1.0.Q8_0.gguf",
     "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf",
     "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf"
   },

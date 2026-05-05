@@ -1,0 +1,135 @@
+{
+  "_comment": "Example Android configuration with llama-server ablation support",
+  "_description": "This configuration demonstrates how to enable llama-server for accurate Android ablation studies",
+  
+  "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+  "models": {
+    "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf",
+    "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf"
+  },
+  
+  "_comment_storage": "Use shared storage for easy access from file manager",
+  "model_cache_dir": "~/storage/shared/models",
+  "output_dir": "~/storage/shared/benchmark_results",
+  
+  "_comment_memory": "Conservative settings for mobile devices",
+  "context_size": 1024,
+  "batch_size": 256,
+  "max_tokens": 100,
+  
+  "_comment_iterations": "Sufficient iterations for statistical significance",
+  "iterations": 5,
+  "warmup_runs": 2,
+  
+  "_comment_tests": "Enable ablation studies with llama-server support",
+  "enable_quantization_profiling": true,
+  "enable_ablation_studies": true,
+  "enable_batch_testing": false,
+  "enable_thermal_monitoring": true,
+  
+  "_comment_android_config": "AndroidConfig settings for llama-server ablation support",
+  "android_config": {
+    "_description": "Configuration for Android llama-server ablation support",
+    
+    "_comment_ablation": "Enable ablation studies mode for automatic llama-server selection",
+    "enable_ablation_studies": true,
+    
+    "_comment_backend": "Explicit backend selection (null = auto-detect based on ablation + platform)",
+    "use_llama_server_for_ablation": null,
+    
+    "_comment_server": "llama-server HTTP API configuration",
+    "llama_server_host": "127.0.0.1",
+    "llama_server_port": 8080,
+    "llama_server_path": null,
+    "llama_server_timeout": 900,
+    
+    "_comment_cache": "Cache control configuration",
+    "cache_mode": "both",
+    "enable_prompt_cache_by_default": false
+  },
+  
+  "_comment_ablation_scenarios": "Ablation scenarios will use these cache configurations:",
+  "_ablation_scenarios": {
+    "control": {
+      "cache_mode": "none",
+      "enable_prompt_cache": false,
+      "description": "True no-cache baseline (--cache-ram 0 --no-cache-prompt)"
+    },
+    "cold_cache": {
+      "cache_mode": "both", 
+      "enable_prompt_cache": true,
+      "description": "Cache enabled but empty (first request creates cache)"
+    },
+    "warm_cache": {
+      "cache_mode": "both",
+      "enable_prompt_cache": true, 
+      "description": "Cache enabled and populated (subsequent requests reuse cache)"
+    },
+    "ram_only": {
+      "cache_mode": "ram_only",
+      "enable_prompt_cache": false,
+      "description": "KV cache only (--no-cache-prompt)"
+    },
+    "disk_only": {
+      "cache_mode": "disk_only",
+      "enable_prompt_cache": true,
+      "description": "Prompt cache only (--cache-ram 0)"
+    }
+  },
+  
+  "_comment_thermal": "Longer sleep time to prevent overheating on mobile",
+  "sleep_between_tests_s": 20,
+  "thermal_stabilization_threshold_c": 70.0,
+  "inference_timeout_s": 900,
+  
+  "_comment_output": "Lightweight output formats for mobile storage",
+  "save_formats": ["json", "csv", "markdown"],
+  "visualization_dpi": 150,
+  
+  "_comment_setup_instructions": [
+    "SETUP INSTRUCTIONS FOR ANDROID LLAMA-SERVER:",
+    "",
+    "1. Build llama-server on Android/Termux:",
+    "   pkg install git cmake clang",
+    "   cd ~",
+    "   git clone https://github.com/ggerganov/llama.cpp",
+    "   cd llama.cpp", 
+    "   cmake -B build -DCMAKE_BUILD_TYPE=Release",
+    "   cmake --build build --config Release -j4",
+    "",
+    "2. Verify llama-server binary:",
+    "   ls -lh ~/llama.cpp/build/bin/llama-server",
+    "",
+    "3. Test llama-server manually:",
+    "   ~/llama.cpp/build/bin/llama-server --help",
+    "",
+    "4. Run benchmark with llama-server support:",
+    "   python -m llm_benchmark --config android_llama_server_example.json",
+    "",
+    "EXPECTED BEHAVIOR:",
+    "- AndroidBackend will detect enable_ablation_studies=true on Android platform",
+    "- System will automatically use llama-server if binary is available",
+    "- Control runs will have true no-cache baseline (--cache-ram 0 --no-cache-prompt)",
+    "- Cache scenarios will have proper per-request cache control",
+    "- Fallback to llama-cli with warning if llama-server not available"
+  ],
+  
+  "_comment_troubleshooting": [
+    "TROUBLESHOOTING:",
+    "",
+    "If llama-server not found:",
+    "- Check binary exists: ls ~/llama.cpp/build/bin/llama-server",
+    "- Rebuild if needed: cd ~/llama.cpp && cmake --build build --config Release",
+    "- Set custom path in android_config.llama_server_path if needed",
+    "",
+    "If ablation studies show no difference:",
+    "- Verify control runs show cache_mode=none in logs",
+    "- Check llama-server starts with --cache-ram 0 --no-cache-prompt flags",
+    "- Monitor llama-server logs for cache activity",
+    "",
+    "If performance is poor:",
+    "- Increase llama_server_timeout for slower devices",
+    "- Reduce context_size and max_tokens for memory constraints",
+    "- Use Q2_K quantization for limited RAM devices"
+  ]
+}
