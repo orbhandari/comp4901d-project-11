@@ -625,7 +625,7 @@ def main():
         logger.info("=" * 80)
         
         hw_info = HardwareDetector.detect()
-        backend = create_backend(hw_info)
+        backend = create_backend(hw_info, config.android_config)
         backend.optimize_for_inference()
         
         logger.info(f"\nPlatform: {hw_info.os_type}")

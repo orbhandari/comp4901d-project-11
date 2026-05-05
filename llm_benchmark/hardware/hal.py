@@ -668,25 +668,34 @@ class JetsonBackend(HardwareBackend):
 class AndroidBackend(HardwareBackend):
     """Hardware backend for Android smartphones."""
     
-    def __init__(self, hw_info: HardwareInfo):
+    def __init__(self, hw_info: HardwareInfo, android_config: Optional[Dict[str, Any]] = None):
         """Initialize AndroidBackend with hardware info and configuration."""
         super().__init__(hw_info)
         self._android_config = None
         self._config_loaded = False
+        self._provided_config = android_config
     
     def _load_android_config(self) -> "AndroidConfig":
         """
-        Load AndroidConfig from file or create default configuration.
+        Load AndroidConfig from provided config, file, or create default configuration.
         
         Returns:
             AndroidConfig instance
         """
         if not self._config_loaded:
             try:
-                # Try to load from standard config file locations
+                from llm_benchmark.android_config import AndroidConfig, create_default_android_config
+                
+                # First, try to use provided configuration from BenchmarkConfig
+                if self._provided_config is not None:
+                    logger.info("Using Android configuration from BenchmarkConfig")
+                    self._android_config = AndroidConfig.from_dict(self._provided_config)
+                    self._config_loaded = True
+                    return self._android_config
+                
+                # Fallback: Try to load from standard config file locations
                 from pathlib import Path
                 import json
-                from llm_benchmark.android_config import AndroidConfig, create_default_android_config
                 
                 config_paths = [
                     Path("android_config.json"),
@@ -703,7 +712,7 @@ class AndroidBackend(HardwareBackend):
                         break
                 
                 if self._android_config is None:
-                    logger.debug("No Android configuration file found, using defaults")
+                    logger.debug("No Android configuration found, using defaults")
                     self._android_config = create_default_android_config()
                 
                 self._config_loaded = True
@@ -1305,12 +1314,13 @@ class AndroidBackend(HardwareBackend):
         logger.info("  - Keep device cool to avoid thermal throttling")
 
 
-def create_backend(hw_info: HardwareInfo) -> HardwareBackend:
+def create_backend(hw_info: HardwareInfo, android_config: Optional[Dict[str, Any]] = None) -> HardwareBackend:
     """
     Create appropriate hardware backend based on detected platform.
     
     Args:
         hw_info: Hardware information from detector
+        android_config: Optional Android configuration dictionary
     
     Returns:
         Hardware backend instance
@@ -1318,6 +1328,6 @@ def create_backend(hw_info: HardwareInfo) -> HardwareBackend:
     if hw_info.os_type == "jetson_xavier_nx":
         return JetsonBackend(hw_info)
     elif hw_info.os_type == "android":
-        return AndroidBackend(hw_info)
+        return AndroidBackend(hw_info, android_config)
     else:
         return X86Backend(hw_info)

@@ -10,7 +10,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 try:
     import yaml
@@ -58,6 +58,9 @@ class BenchmarkConfig:
     
     # Authentication
     hf_token: Optional[str] = None
+    
+    # Android Configuration
+    android_config: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         """Validate configuration parameters."""
