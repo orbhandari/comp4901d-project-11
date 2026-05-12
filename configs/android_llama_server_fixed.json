@@ -1,0 +1,49 @@
+{
+  "_comment": "Android configuration with llama-server ablation support - FIXED VERSION",
+  "_description": "This configuration enables llama-server for accurate Android ablation studies",
+  
+  "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+  "models": {
+    "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf",
+    "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf"
+  },
+  
+  "model_cache_dir": "~/storage/shared/models",
+  "output_dir": "~/storage/shared/benchmark_results",
+  
+  "context_size": 2048,
+  "batch_size": 256,
+  "max_tokens": 100,
+  
+  "iterations": 5,
+  "warmup_runs": 2,
+  
+  "enable_quantization_profiling": true,
+  "enable_ablation_studies": true,
+  "enable_batch_testing": false,
+  "enable_thermal_monitoring": true,
+  
+  "android_config": {
+    "enable_ablation_studies": true,
+    "use_llama_server_for_ablation": null,
+    "llama_server_host": "127.0.0.1",
+    "llama_server_port": 8080,
+    "llama_server_path": null,
+    "llama_server_timeout": 900,
+    "cache_mode": "both",
+    "enable_prompt_cache_by_default": false
+  },
+  
+  "sleep_between_tests_s": 20,
+  "thermal_stabilization_threshold_c": 70.0,
+  "inference_timeout_s": 900,
+  
+  "save_formats": ["json", "csv", "markdown"],
+  "visualization_dpi": 150,
+  
+  "_setup_instructions": [
+    "1. Build llama-server: cd ~/llama.cpp && cmake --build build --config Release",
+    "2. Verify binary: ls ~/llama.cpp/build/bin/llama-server", 
+    "3. Run: python -m llm_benchmark --config configs/android_llama_server_fixed.json"
+  ]
+}

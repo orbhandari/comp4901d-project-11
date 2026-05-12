@@ -1,0 +1,59 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-frozen.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-frozen.txt
+      
+      - name: Download test models
+        run: |
+          python scripts/download_test_models.py
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ -v --cov=llm_benchmark --cov-report=xml --cov-report=term
+      
+      - name: Run integration tests (excluding Jetson-specific)
+        run: |
+          pytest tests/integration/ -v -m "not jetson" --cov=llm_benchmark --cov-append --cov-report=xml --cov-report=term
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+      
+      - name: Generate coverage report
+        run: |
+          coverage report --show-missing

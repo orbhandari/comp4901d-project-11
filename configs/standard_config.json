@@ -1,0 +1,28 @@
+{
+  "repo_id": "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF",
+  "models": {
+    "Q8_0": "tinyllama-1.1b-chat-v1.0.Q8_0.gguf",
+    "Q4_0": "tinyllama-1.1b-chat-v1.0.Q4_0.gguf",
+    "Q2_K": "tinyllama-1.1b-chat-v1.0.Q2_K.gguf"
+  },
+  "model_cache_dir": "./models",
+  "context_size": 2048,
+  "batch_size": 512,
+  "max_tokens": 100,
+  "iterations": 5,
+  "warmup_runs": 2,
+  "enable_quantization_profiling": true,
+  "enable_ablation_studies": true,
+  "enable_batch_testing": true,
+  "enable_thermal_monitoring": true,
+  "kv_cache_types": ["ram", "disk"],
+  "prompt_cache_prefix_lengths": [100, 500, 1000],
+  "batch_sizes": [1, 2, 4, 8, 16],
+  "sleep_between_tests_s": 5,
+  "thermal_stabilization_threshold_c": 70.0,
+  "inference_timeout_s": 300,
+  "output_dir": "./benchmark_results",
+  "save_formats": ["json", "csv", "markdown", "html"],
+  "visualization_dpi": 300,
+  "_comment": "Configuration optimized for x86 Linux systems with CPU-only inference. Adjust context_size and batch_size based on available RAM. For systems with 16GB+ RAM, you can increase context_size to 4096 and test larger models."
+}

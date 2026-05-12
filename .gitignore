@@ -1,0 +1,72 @@
+# Environment and secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Models and data
+models/
+*.gguf
+*.bin
+*.safetensors
+
+# Benchmark results
+benchmark_results/
+/results/
+demo_output/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+*.log
+pytestdebug.log
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Development artifacts
+TASK_*.md
+CHECKPOINT_*.md
+BUGFIX_*.md
+demo_*.py
+test_*_manual.py
+verify_*.py
+*_COMPLETION.md
+*_VERIFICATION.md
+*_SUMMARY.md

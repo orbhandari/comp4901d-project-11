@@ -1,0 +1,181 @@
+\documentclass[10pt]{beamer}
+
+% --- Theme and Colors ---
+\usetheme{metropolis}
+\usepackage[utf8]{inputenc}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+% --- Code Styling ---
+% \lstset{
+%     basicstyle=\tiny\ttfamily,
+%     breaklines=true,
+%     keywordstyle=\color{blue},
+%     commentstyle=\color{gray},
+%     stringstyle=\color{orange},
+%     frame=single,
+%     backgroundcolor=\color{gray!5}
+% }
+
+\lstset{
+    language=Python,
+    basicstyle=\tiny\ttfamily,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    commentstyle=\color{gray},
+    breaklines=true,
+    frame=single,
+    showstringspaces=false
+}
+
+\title{Midterm Progress:\\
+Benchmarking LLMs on Edge Hardware}
+\subtitle{Quantization Profiling and Runtime Optimizations}
+\author{Group 5: Lau Wing Yi -- Bhandari, Om Raj}
+\date{March 2026}
+
+\begin{document}
+
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% --- SECTION 1: SYSTEM DESIGN ---
+\section{Preliminary System Design}
+
+\begin{frame}{Progress: Automated Benchmarking Harness}
+    Our \texttt{benchmark.py} suite automates the LLM inference benchmark lifecycle:
+    \begin{enumerate}
+        \item \textbf{Configuration:} Define device name, model and quantizations, context size (2048 by default), and batching (512 by default).
+        \item \textbf{Environment Audit:} \texttt{print\_device\_info()} logs OS, CPU, and total RAM.
+        \item \textbf{Acquisition:} \texttt{download\_models()} verifies GGUF local availability.
+        \item \textbf{Profiling Loop:} \texttt{run\_quant\_benchmark()} for each precision level.
+        \item \textbf{Ablation Study:} \texttt{run\_caching\_ablation()} for RAM vs. Disk caching.
+        \item \textbf{Reporting:} Print matrix \& results
+    \end{enumerate}
+\end{frame}
+
+% --- SECTION 2: EVALUATION ---
+\section{Experimental Evaluation}
+
+\begin{frame}{Preliminary Results: Benchmark Matrix}
+    \textbf{Hardware:} x86 Linux Laptop (CPU-only, AMD Ryzen 7)
+    \begin{table}[]
+    \centering
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{lcccccc}
+    \toprule
+    \textbf{Quant} & \textbf{Load (s)} & \textbf{Peak RAM (MB)} & \textbf{TTFT (ms)} & \textbf{Prefill (tps)} & \textbf{Decode (tps)} \\ \midrule
+    Q8\_0 & 0.35 & 8609.23 & 1836.46 & 55.54 & 9.99 \\
+    Q4\_K\_M & 0.79 & 8356.86 & 1547.97 & 65.89 & 16.17 \\ \bottomrule
+    \end{tabular}}
+    \caption{Llama 3.1-8B on x86\_Arch\_Linux\_Laptop}
+    \end{table}
+
+    \textbf{Key Analysis:}
+    \begin{itemize}
+        \item \textbf{Q4 Load Time Paradox:} Longer load time ($0.79s$ vs $0.35s$) due to \emph{k-quants' complexity}. Unlike linear Q8, Q4\_K\_M requires a ``repacking" step to map its complex super-block structures to CPU SIMD instructions.
+        \item \textbf{Q4 Memory Savings:} Q4 achieved the expected lower footprint, saving $\sim$253MB at peak.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{The Mechanics of CPU Inference}
+    \textbf{We expected Q8 to be faster than Q4 on a CPU, because:}
+    \begin{itemize}
+        \item \textbf{No Native 4-bit Opcode:} x86 ISAs (AVX2/AVX-512) lack 4-bit ALUs. Weights are packed in memory, then \textbf{unpacked} into 8-bit SIMD lanes at compute time.
+    \end{itemize}
+    \textbf{However, results show Q4 is faster. Why?}
+    \begin{itemize}
+        \item \textbf{The Bottleneck:} Modern CPUs are often \textbf{memory-bound}, not compute-bound.
+        \item Smaller Q4 weights fit better in CPU caches and reduce memory bandwidth pressure. This performance gain outweighs the CPU cycles spent on the ``unpacking" logic.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Ablation Study: Prompt Caching}
+    \begin{columns}
+    \column{0.5\textwidth}
+    \textbf{RAM Cache}
+    \begin{itemize}
+        \item Cold TTFT: $1990.45$ ms
+        \item Warm TTFT: $1522.43$ ms
+        \item Improvement: $468.02$ ms
+        \item Reduction: $23.51\%$
+    \end{itemize}
+    \column{0.5\textwidth}
+    \textbf{Disk Cache}
+    \begin{itemize}
+        \item Cold TTFT: $2582.98$ ms
+        \item Warm TTFT: $1585.11$ ms
+        \item Improvement: $997.87$ ms
+        \item Reduction: $38.63\%$
+    \end{itemize}
+    \end{columns}
+    
+    \begin{itemize}
+        \item \textbf{The OS Page Cache:} Disk ``warm" speed is identical to RAM. The OS stores the disk-based cache file in \textit{file-backed memory (RAM)} for quick access.
+        \item \textbf{Strategic Choice:} 
+        \begin{itemize}
+            \item \textbf{RAM Cache:} Fast but volatile; takes up active address space.
+            \item \textbf{Disk Cache:} Superior for edge devices. Provides near-RAM speeds via Page Cache (only if available!) but remains persistent and allows the OS to evict data under memory pressure.
+            \item \textbf{Why it matters?} Some devices may have intermittent power!
+        \end{itemize}
+    \end{itemize}
+\end{frame}
+
+% --- SECTION 3: SYSTEM CHALLENGES ---
+\section{Addressing System Challenges}
+
+\begin{frame}{Ensuring Benchmarking Integrity}
+    \begin{itemize}
+        \item \textbf{Run Isolation:} Using \texttt{gc.collect()} and \texttt{time.sleep(2)} to clear memory fragmentation between tests in the same script instance.
+        \item \textbf{The Warmup Protocol:} Implementing a \textit{warmup prompt} to force model weights into the page cache, preventing "Lazy Initialization" from skewing the first model's results.
+        \item \textbf{Phase Isolation:} Using \textit{stream mode} to capture the exact timestamp of the first generated chunk, separating \textit{prefill} ($\approx$ TTFT) from \textit{decode} (TPS).
+        \item \textbf{KV Cache Isolation:} A/B testing with fresh LLM instances to ensure we measure the cache effect specifically, not just context growth.
+    \end{itemize}
+\end{frame}
+
+
+\begin{frame}[fragile]{Implementation: Profiling Core}
+    \begin{lstlisting}[caption=Quantization Profiling Logic (SNIPPET)]
+def run_quant_benchmark(model_path, quant):
+    # 1. Baseline Memory Tracking
+    process = psutil.Process()
+    baseline_mem = process.memory_info().rss / (1024 * 1024)
+
+    # 2. Lazy Loading / Model Init
+    llm = Llama(model_path=model_path, n_ctx=CONTEXT_SIZE, verbose=False)
+    
+    # 3. CRITICAL: Warmup to ensure weights are in Page Cache
+    _ = llm("Warmup", max_tokens=5)
+
+    # 4. Phase Separation via Streaming
+    start_eval = time.perf_counter()
+    streamer = llm(prompt, max_tokens=100, stream=True)
+
+    for chunk in streamer:
+        if ttft_s == 0:
+            # Captures Time to First Token (Prefill Phase)
+            ttft_s = time.perf_counter() - start_eval
+            decode_start_time = time.perf_counter()
+        tokens_generated += 1
+
+    # 5. Metrics Calculation (TPS and RAM Increase)
+    decode_tps = (tokens_generated - 1) / (time.perf_counter() - decode_start_time)
+    mem_increase = (process.memory_info().rss / (1024 * 1024)) - baseline_mem
+    \end{lstlisting}
+\end{frame}
+
+% --- SECTION 4: FUTURE PLANS ---
+\section{Future Plans}
+
+\begin{frame}{Roadmap to Final Evaluation}
+    \begin{itemize}
+        \item \textbf{Test on more hardware:} Deploy to \textbf{NVIDIA Jetson X} and \textbf{MacBook (Metal optimization)}
+        \item \textbf{Scaling \& Stress Testing:} Test long prompt sequences (P1 $\to$ P2 $\to$ P3) to identify the "breaking point" where RAM Cache hits capacity and requires swap space or Disk Caching.
+        \item \textbf{Statistical Rigor:} Do more iterations to compute the averages with Standard Deviation.
+    \end{itemize}
+\end{frame}
+
+\end{document}
